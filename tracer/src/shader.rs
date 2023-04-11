@@ -38,7 +38,7 @@ impl ShaderSource {
         })
     }
 
-    pub fn open_file(filepath: &str) -> Result<Vec<u8>, io::Error> {
+    fn open_file(filepath: &str) -> Result<Vec<u8>, io::Error> {
         let mut file = fs::File::open(filepath)?;
         let file_size = file.metadata()?.len() as usize;
 
@@ -64,6 +64,12 @@ impl ShaderProgram {
         Ok(ShaderProgram {
             program_id: Self::link_shaders(&shaders)?,
         })
+    }
+
+    pub fn use_program(&self) {
+        unsafe {
+            gl::UseProgram(self.program_id);
+        }
     }
 
     fn compile_shader(shader: ShaderSource) -> Result<u32, ShaderError> {
