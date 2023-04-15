@@ -1,66 +1,45 @@
-//TODO: delete shaders after use
+use std::io::Write;
+
+use crate::ui_element::ui_root::UiRoot;
 use glad_gl::gl;
 
-use crate::{
-    mesh::{Mesh, MeshType},
-    shader::ShaderProgram,
-    vertex::{Color, MeshGenerator, VertexPC},
-};
+#[derive(Debug)]
+pub struct AppError {
+    pub error_msg: String,
+}
+
+#[derive(Clone, Copy)]
+pub enum MouseEvent {
+    Movement,
+    LeftClick,
+    RightClick,
+    Scroll(f32),
+}
 
 pub trait Application {
     fn on_init(&mut self) {}
-    fn on_click(&mut self, x: f32, y: f32, key: u32) {}
-    fn on_mouse(&mut self, x: f64, y: f64) {}
-    fn on_key_down(&mut self, code: u32) {}
-    fn on_key_up(&mut self, code: u32) {}
-    fn on_exit(&mut self) {}
+    fn handle_event(&mut self, pos: (f32, f32), event: MouseEvent) {}
 
     fn get_title(&self) -> &'static str;
     fn get_resolution(&self) -> (u32, u32);
-    fn render(&self) {}
-}
-
-struct GraphicsContext {
-    ui_shader: ShaderProgram,
-    ui_root: Mesh<VertexPC>,
-}
-
-impl GraphicsContext {
-    fn build() -> Self {
-        let ui_shader = match ShaderProgram::build(
-            "tracer/shaders/ui_shader.vs",
-            "tracer/shaders/ui_shader.fs",
-        ) {
-            Ok(shader) => shader,
-            Err(error) => panic!("Failed to compile ui shader:\n{}", error.error_msg),
-        };
-
-        let (vertices, indices) = VertexPC::quad(0.5, Color(0.0, 0.5, 0.0));
-        let ui_quad = Mesh::build(vertices, indices, MeshType::Triangles);
-
-        GraphicsContext {
-            ui_shader,
-            ui_root: ui_quad,
-        }
-    }
+    fn render(&mut self) {}
 }
 
 pub struct Program {
     pub title: &'static str,
     pub width: u32,
     pub height: u32,
-    time: u32,
-    graphics: Option<GraphicsContext>,
+    ui_root: Option<UiRoot>,
 }
 
 impl Program {
-    pub fn new(title: &'static str, width: u32, height: u32) -> Self {
+    pub fn build(title: &'static str, width: u32, height: u32) -> Self {
+        std::io::stdout().flush().unwrap();
         Program {
-            time: 0,
             title,
             width,
             height,
-            graphics: None,
+            ui_root: None,
         }
     }
 }
@@ -74,21 +53,27 @@ impl Application for Program {
         (self.width, self.height)
     }
 
-    fn render(&self) {
-        unsafe {
-            gl::ClearColor(0.0, 0.9, 0.1, 1.0);
-            gl::Clear(gl::COLOR_BUFFER_BIT);
-            if let Some(context) = self.graphics.as_ref() {
-                context.ui_shader.use_program();
-                context.ui_root.render();
+    fn render(&mut self) {
+        if let Some(ui_root) = &mut self.ui_root {
+            unsafe {
+                gl::ClearColor(0.2, 0.2, 0.2, 1.0);
+                gl::Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT);
+
+                ui_root.render();
             }
         }
     }
 
     fn on_init(&mut self) {
-        println!("Compiling shaders...");
-        self.graphics = Some(GraphicsContext::build());
+        self.ui_root = match UiRoot::build() {
+            Ok(ui_root) => Some(ui_root),
+            _ => panic!("Failed to initialize UI context"),
+        }
     }
 
-    fn on_click(&mut self, x: f32, y: f32, key: u32) {}
+    fn handle_event(&mut self, pos: (f32, f32), event: MouseEvent) {
+        if let Some(ui_root) = &mut self.ui_root {
+            ui_root.handle(pos, event);
+        }
+    }
 }

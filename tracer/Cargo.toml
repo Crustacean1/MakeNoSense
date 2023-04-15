@@ -8,4 +8,5 @@ edition = "2021"
 [dependencies]
 glad-gl = {path="../glad-gl"}
 glfw = "0.51.0"
+image = "0.24.6"
 vertex_buffer_macro_derive = {path = "../vertex_buffer_macro_derive"}

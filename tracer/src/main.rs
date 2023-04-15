@@ -6,13 +6,11 @@ extern crate glfw;
 
 mod application;
 mod image;
-mod mesh;
-mod shader;
-mod vertex;
+mod ui_element;
 mod window_context;
 
 fn main() {
-    let mut program = Program::new("Final Solution", 800, 600);
+    let mut program = Program::build("Final Solution", 1200, 800);
 
     let mut context = match WindowContext::build(&mut program) {
         Ok(context) => context,

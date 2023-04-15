@@ -2,8 +2,8 @@ use proc_macro::TokenStream;
 use quote::quote;
 use syn::{Data, Field};
 
-#[proc_macro_derive(VertexBuffer)]
-pub fn vertex_layout(struct_stream: TokenStream) -> TokenStream {
+#[proc_macro_derive(Vertex)]
+pub fn vertex_derive(struct_stream: TokenStream) -> TokenStream {
     let struct_ast: syn::DeriveInput = syn::parse(struct_stream).unwrap();
 
     let struct_name = struct_ast.ident;
@@ -37,7 +37,7 @@ pub fn vertex_layout(struct_stream: TokenStream) -> TokenStream {
     });
 
     quote! {
-        impl VertexBuffer for #struct_name
+        impl Vertex for #struct_name
         {
             fn declare_layout(){
                 unsafe{
