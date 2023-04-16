@@ -5,14 +5,6 @@ use glfw::{Action, Context, Glfw, Key, Window, WindowEvent};
 
 use crate::application::{Application, MouseEvent};
 
-type Callback<T> = Box<dyn Fn(T) -> ()>;
-
-pub enum MouseClick {
-    Left(u32, u32),
-    Right(u32, u32),
-    Middle(u32, u32),
-}
-
 pub struct WindowContext<'a> {
     context: Glfw,
     window: Window,
@@ -37,6 +29,7 @@ impl<'a> WindowContext<'a> {
 
         window.set_key_polling(true);
         window.set_mouse_button_polling(true);
+        window.set_cursor_pos_polling(true);
         window.set_scroll_polling(true);
         window.set_framebuffer_size_polling(true);
         window.make_current();
@@ -45,7 +38,9 @@ impl<'a> WindowContext<'a> {
 
         unsafe {
             gl::PointSize(10.0);
-            gl::Enable(gl::DEPTH_TEST);
+            gl::LineWidth(5.0);
+            gl::Enable(gl::BLEND);
+            gl::BlendFunc(gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA);
         }
 
         Ok(WindowContext {
@@ -82,7 +77,7 @@ impl<'a> WindowContext<'a> {
         let resolution = application.get_resolution();
         let half_resolution = (resolution.0 as f32 * 0.5, resolution.1 as f32 * 0.5);
         let pos = (
-            (pos.0 as f32 - half_resolution.0 as f32) / half_resolution.0,
+            (pos.0 as f32 - half_resolution.0 as f32) / half_resolution.1,
             (half_resolution.1 as f32 - pos.1 as f32) / half_resolution.1,
         );
 
@@ -93,8 +88,8 @@ impl<'a> WindowContext<'a> {
             glfw::WindowEvent::Key(Key::Escape, _, Action::Release, _) => {
                 window.set_should_close(true)
             }
-            glfw::WindowEvent::CursorPos(x, y) => {
-                application.handle_event((x as f32, y as f32), MouseEvent::Movement)
+            glfw::WindowEvent::CursorPos(_, _) => {
+                application.handle_event(pos, MouseEvent::Movement)
             }
             glfw::WindowEvent::MouseButton(button, action, _modifiers) => {
                 if action == Action::Press {

@@ -1,45 +1,72 @@
-use crate::application::MouseEvent;
+use crate::{application::MouseEvent, triangulator::Triangulator, vec::Vec2};
 
 use super::{
     matrix::Matrix,
     mesh::Mesh,
     shader_context::ShaderContext,
-    vertex::{Color, IndexBuffer, MeshType, Position, VertexBuffer, VertexPC},
-    BoundingRect, UiElement, UiElementInner,
+    vertex::{Color, IndexBuffer, MeshGenerator, MeshType, Position, VertexBuffer, VertexPC},
+    BoundingRect, EditMode, UiElement, UiElementInner,
 };
 
-pub struct UiImageSelection {
-    points: Mesh<VertexPC, 1>,
+pub struct UiImageSelection<'a> {
+    selection_area: Mesh<VertexPC, 3>,
+    selection_point: Mesh<VertexPC, 3>,
+
     children: Vec<Box<dyn UiElement>>,
     world_matrix: Matrix,
+    triangulator: Triangulator,
+    edit_mode: &'a EditMode,
+    selected_point: Option<u32>,
 }
 
-impl UiImageSelection {
-    pub fn new() -> Self {
+impl<'a> UiImageSelection<'a> {
+    pub fn new(edit_mode: &'a EditMode) -> Self {
         let (vertices, indices) = (VertexBuffer::new(vec![]), IndexBuffer::new(vec![]));
-        let points = Mesh::build(vertices, indices, MeshType::Points);
+        let selection_area = Mesh::build(vertices, indices, MeshType::Triangles);
+        let (vertices, indices) = VertexPC::ring(0.01, 0.015, 20);
+        let selection_point = Mesh::build(vertices, indices, MeshType::Triangles);
+
         UiImageSelection {
-            points,
+            selection_area,
+            selection_point,
             children: vec![],
-            world_matrix: Matrix::trans(0.0, 0.0, -0.1),
+            world_matrix: Matrix::translate(0.0, 0.0, -0.1),
+            triangulator: Triangulator::new(),
+            edit_mode,
+            selected_point: None,
         }
     }
 
+    pub fn update_cursor(&mut self, (x, y): (f32, f32)) {
+        self.triangulator.update(Vec2::new((x, y)));
+        self.update_mesh();
+    }
+
     pub fn add_point(&mut self, (x, y): (f32, f32)) {
-        self.points.v_buffer.vertices.push(VertexPC {
-            pos: Position(x, y, 0.0),
-            col: Color(1.0, 0.4, 0.2),
-        });
+        self.triangulator.add(Vec2::new((x, y)));
+        self.update_mesh();
+    }
 
-        let v_count = self.points.v_buffer.vertices.len();
-
-        self.points.i_buffer.add_point([v_count as u32]);
-        self.points.load();
+    fn update_mesh(&mut self) {
+        match self.triangulator.triangulate() {
+            Some((vertices, indices)) => {
+                self.selection_area.v_buffer.vertices = vertices
+                    .iter()
+                    .map(|Vec2 { x, y }| VertexPC {
+                        pos: Position(*x, *y),
+                        col: Color(0.2, 0.5, 0.9, 0.5),
+                    })
+                    .collect();
+                self.selection_area.i_buffer.indices = indices;
+                self.selection_area.load();
+            }
+            None => {}
+        }
     }
 }
 
-impl UiElementInner for UiImageSelection {
-    fn on_mouse_event(&mut self, pos: (f32, f32), event: MouseEvent) -> bool {
+impl<'a> UiElementInner for UiImageSelection<'a> {
+    fn on_mouse_event(&mut self, _pos: (f32, f32), _event: MouseEvent) -> bool {
         false
     }
 
@@ -48,7 +75,23 @@ impl UiElementInner for UiImageSelection {
             .col_shader
             .set_matrix("world\x00", context.get_matrix())
         {
-            self.points.render();
+            self.selection_area.render();
+
+            let world_mat = *context.get_matrix();
+            let aspect_mat = context.get_aspect_matrix();
+
+            self.triangulator
+                .get_points()
+                .iter()
+                .rev()
+                .skip(1)
+                .for_each(|point| {
+                    let translation = world_mat * *point;
+                    let mat = *aspect_mat * Matrix::translate(translation.x, translation.y, 0.0);
+
+                    context.col_shader.set_matrix("world\x00", &mat);
+                    self.selection_point.render();
+                });
         }
     }
 
@@ -57,7 +100,7 @@ impl UiElementInner for UiImageSelection {
     }
 
     fn get_bounding_box(&self) -> super::BoundingRect {
-        let vertices = &self.points.v_buffer.vertices;
+        let vertices = &self.selection_area.v_buffer.vertices;
         let x_axis = vertices.iter().map(|v| v.pos.0);
         let y_axis = vertices.iter().map(|v| v.pos.1);
 
@@ -93,11 +136,11 @@ impl UiElementInner for UiImageSelection {
         panic!("God left me unfinished");
     }
 
-    fn get_children<'a>(&'a self) -> Box<dyn Iterator<Item = &dyn UiElement> + 'a> {
+    fn get_children<'b>(&'b self) -> Box<dyn Iterator<Item = &dyn UiElement> + 'b> {
         Box::new(self.children.iter().map(|child| &**child))
     }
 
-    fn get_children_mut<'a>(&'a mut self) -> Box<dyn Iterator<Item = &mut dyn UiElement> + 'a> {
+    fn get_children_mut<'b>(&'b mut self) -> Box<dyn Iterator<Item = &mut dyn UiElement> + 'b> {
         Box::new(
             self.children
                 .iter_mut()

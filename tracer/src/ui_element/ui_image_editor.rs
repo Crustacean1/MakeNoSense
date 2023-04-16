@@ -10,43 +10,46 @@ use super::{
     shader_context::ShaderContext,
     ui_image_selection::UiImageSelection,
     vertex::{MeshGenerator, MeshType, VertexPT},
-    BoundingRect, UiElement, UiElementInner,
+    BoundingRect, EditMode, UiElement, UiElementInner,
 };
 
-pub struct UiImageEditor {
+pub struct UiImageEditor<'a> {
     image: Image,
     quad: Mesh<VertexPT, 3>,
-    children: Vec<Box<UiImageSelection>>,
+    children: Vec<Box<UiImageSelection<'a>>>,
     world_matrix: Matrix,
-    screen_resolution: (u32, u32),
+    screen_resolution: (f32, f32),
     size: (f32, f32),
     pos: (f32, f32),
     sensitivity: f32,
+    edit_mode: EditMode,
+    selection: Option<u32>,
 }
 
-impl UiImageEditor {
+impl<'a> UiImageEditor<'a> {
     pub fn new(
         (x, y): (f32, f32),
         (width, height): (f32, f32),
-        screen_resolution: (u32, u32),
-    ) -> UiImageEditor {
+        screen_resolution: (f32, f32),
+    ) -> UiImageEditor<'a> {
         let (vertices, indices) = VertexPT::quad(width, height);
         let quad = Mesh::build(vertices, indices, MeshType::Triangles);
-        let selection = Box::new(UiImageSelection::new());
 
         UiImageEditor {
-            image: Image::from_color(Color(0.9, 0.5, 0.1)),
+            image: Image::from_color(Color(0.9, 0.5, 0.1, 1.0)),
             screen_resolution,
             quad,
             pos: (x, y),
             size: (width, height),
-            children: vec![selection],
-            world_matrix: Matrix::trans(x, y, 0.0),
+            children: vec![],
+            world_matrix: Matrix::translate(x, y, 0.0),
             sensitivity: 0.1,
+            edit_mode: EditMode::Preview,
+            selection: None,
         }
     }
 
-    pub fn load_image(mut self, filename: &str) -> Result<UiImageEditor, AppError> {
+    pub fn load_image(mut self, filename: &str) -> Result<UiImageEditor<'a>, AppError> {
         let image = Image::from_file(filename)?;
 
         self.update_resolution((image.width() as f32, image.height() as f32));
@@ -63,17 +66,13 @@ impl UiImageEditor {
 
         let maximal_scaling = f32::min(axis_scaling.0, axis_scaling.1);
 
-        self.quad
-            .v_buffer
-            .vertices
-            .iter_mut()
-            .for_each(|VertexPT { pos, .. }| {
-                (pos.0, pos.1, pos.2) = (
-                    pos.0 * (maximal_scaling / axis_scaling.0),
-                    pos.1 * (maximal_scaling / axis_scaling.1),
-                    pos.2,
-                )
-            });
+        println!("resolution:  {} {} ", img_resolution.0, img_resolution.1);
+
+        let (vertices, _) = VertexPT::quad(
+            self.size.0 * img_resolution.0 * maximal_scaling,
+            self.size.1 * img_resolution.1 * maximal_scaling,
+        );
+        self.quad.v_buffer = vertices;
 
         self.quad.load();
     }
@@ -83,18 +82,31 @@ impl UiImageEditor {
         let factor = 1.0 + factor * self.sensitivity;
 
         if (scale > 0.2 || factor > 1.0) && (scale < 50.0 || factor < 1.0) {
-            let mat = Matrix::trans(-x, -y, 0.0) * Matrix::scale(factor) * Matrix::trans(x, y, 0.0);
+            let mat = Matrix::translate(-x, -y, 0.0)
+                * Matrix::scale(factor)
+                * Matrix::translate(x, y, 0.0);
             self.world_matrix = self.world_matrix * mat;
         }
     }
 
-    fn add_selection(&mut self, pos: (f32, f32)) {
-        let (scale_pos, scale) = self.matrix_to_scale();
+    fn add_point(&mut self, pos: (f32, f32)) {
+        let pos = self.transform_cursor_pos(pos);
         if let Some(latest_selection) = self.children.last_mut() {
-            let mut pos = (pos.0 - scale_pos.0, pos.1 - scale_pos.1);
-            pos = (pos.0 / scale, pos.1 / scale);
             latest_selection.add_point(pos);
         }
+    }
+
+    fn update_cursor(&mut self, pos: (f32, f32)) {
+        let pos = self.transform_cursor_pos(pos);
+        if let Some(latest_selection) = self.children.last_mut() {
+            latest_selection.update_cursor(pos);
+        }
+    }
+
+    fn transform_cursor_pos(&self, pos: (f32, f32)) -> (f32, f32) {
+        let (scale_pos, scale) = self.matrix_to_scale();
+        let pos = (pos.0 - scale_pos.0, pos.1 - scale_pos.1);
+        (pos.0 / scale, pos.1 / scale)
     }
 
     fn matrix_to_scale(&self) -> ((f32, f32), f32) {
@@ -104,13 +116,21 @@ impl UiImageEditor {
         let vec = (matrix[3][0], matrix[3][1]);
         ((vec), scale)
     }
+
+    fn add_selection<'b: 'a>(&'b mut self) {
+        self.children
+            .push(Box::new(UiImageSelection::<'b>::new(&self.edit_mode)));
+        self.selection = Some((self.children.len() - 1) as u32);
+    }
 }
 
-impl UiElementInner for UiImageEditor {
+impl<'a> UiElementInner for UiImageEditor<'a> {
     fn on_mouse_event(&mut self, pos: (f32, f32), event: MouseEvent) -> bool {
         match event {
             MouseEvent::Scroll(s) => self.scale_image(pos, s as f32),
-            MouseEvent::LeftClick => self.add_selection(pos),
+            MouseEvent::LeftClick => self.add_point(pos),
+            MouseEvent::Movement => self.update_cursor(pos),
+            MouseEvent::RightClick => self.add_selection(),
             _ => (),
         }
         true
@@ -128,7 +148,7 @@ impl UiElementInner for UiImageEditor {
 
     fn set_position(&mut self, pos: (f32, f32)) {
         self.pos = pos;
-        self.world_matrix = Matrix::trans(pos.0, pos.1, 0.0) * self.world_matrix;
+        self.world_matrix = Matrix::translate(pos.0, pos.1, 0.0) * self.world_matrix;
     }
 
     fn get_bounding_box(&self) -> super::BoundingRect {
@@ -147,11 +167,11 @@ impl UiElementInner for UiImageEditor {
         &self.world_matrix
     }
 
-    fn get_children<'a>(&'a self) -> Box<dyn Iterator<Item = &dyn UiElement> + 'a> {
+    fn get_children<'b>(&'b self) -> Box<dyn Iterator<Item = &dyn UiElement> + 'b> {
         Box::new(self.children.iter().map(|child| &**child as &dyn UiElement))
     }
 
-    fn get_children_mut<'a>(&'a mut self) -> Box<dyn Iterator<Item = &mut dyn UiElement> + 'a> {
+    fn get_children_mut<'b>(&'b mut self) -> Box<dyn Iterator<Item = &mut dyn UiElement> + 'b> {
         Box::new(
             self.children
                 .iter_mut()

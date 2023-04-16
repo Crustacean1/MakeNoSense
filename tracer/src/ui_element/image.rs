@@ -64,13 +64,14 @@ impl Image {
     }
 
     pub fn from_color(color: Color) -> Self {
-        let img: [u8; 3] = [
+        let img: [u8; 4] = [
             (color.0 * 255.0) as u8,
             (color.1 * 255.0) as u8,
             (color.2 * 255.0) as u8,
+            (color.3 * 255.0) as u8,
         ];
 
-        let tex_buffer = Self::load_texture(img.as_ptr(), 1, 2, ImageFormat::Rgb);
+        let tex_buffer = Self::load_texture(img.as_ptr(), 1, 1, ImageFormat::Rgb);
 
         Image {
             tex_buffer,

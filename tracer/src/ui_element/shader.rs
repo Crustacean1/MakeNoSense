@@ -63,12 +63,6 @@ impl ShaderProgram {
         })
     }
 
-    pub fn use_program(&self) {
-        unsafe {
-            gl::UseProgram(self.program_id);
-        }
-    }
-
     pub fn set_matrix(&self, name: &str, matrix: &Matrix) -> bool {
         unsafe {
             gl::UseProgram(self.program_id);

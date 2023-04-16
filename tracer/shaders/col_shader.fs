@@ -1,9 +1,9 @@
 #version 460 core
 
-in vec3 vCol;
+in vec4 vCol;
 out vec4 fCol;
 
 void main(){
-    fCol = vec4(vCol,0);
+    fCol = vec4(vCol);
 }
 

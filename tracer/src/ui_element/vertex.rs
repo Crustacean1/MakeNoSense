@@ -28,10 +28,10 @@ trait VertexAttribute {
 }
 
 #[derive(Copy, Clone, Debug, VertexAttribute)]
-pub struct Position(pub f32, pub f32, pub f32);
+pub struct Position(pub f32, pub f32);
 
 #[derive(Copy, Clone, Debug, VertexAttribute)]
-pub struct Color(pub f32, pub f32, pub f32);
+pub struct Color(pub f32, pub f32, pub f32, pub f32);
 
 #[derive(Copy, Clone, Debug, VertexAttribute)]
 pub struct Texture(pub f32, pub f32);
@@ -39,6 +39,7 @@ pub struct Texture(pub f32, pub f32);
 pub enum MeshType {
     Triangles,
     Lines,
+    LineStrip,
     Points,
 }
 
@@ -48,6 +49,7 @@ impl MeshType {
             Self::Triangles => gl::TRIANGLES,
             Self::Lines => gl::LINES,
             Self::Points => gl::POINTS,
+            Self::LineStrip => gl::LINE_STRIP,
         }
     }
 }
@@ -84,10 +86,22 @@ impl<const T: usize> IndexBuffer<T> {
     }
 
     pub fn ring(res: u32) -> IndexBuffer<3> {
-        let indices: Vec<_> = (0..res)
-            .map(|i| [i * 2, (i * 2 + 1) % res, (i * 2 + 2) % res])
+        let mut indices1: Vec<_> = (0..res)
+            .map(|i| [i * 2, (i * 2 + 1) % (res * 2), (i * 2 + 2) % (res * 2)])
             .collect();
-        IndexBuffer { indices }
+        let mut indices2: Vec<_> = (0..res)
+            .map(|i| {
+                [
+                    (i * 2 + 1) % (res * 2),
+                    (i * 2 + 2) % (res * 2),
+                    (i * 2 + 3) % (res * 2),
+                ]
+            })
+            .collect();
+
+        indices1.append(&mut indices2);
+
+        IndexBuffer { indices: indices1 }
     }
 }
 
@@ -124,14 +138,13 @@ impl Position {
         Position(
             if i / 2 == 0 { -width } else { width },
             if i % 2 == 0 { -height } else { height },
-            0.0,
         )
     }
 
     fn ring(i: u32, inner: f32, outer: f32, res: u32) -> Position {
-        let angle = 2.0 * PI * (i as f32 / (2.0 * res as f32));
+        let angle = 2.0 * PI * ((i / 2) as f32 / (res as f32));
         let radius = if i % 2 == 0 { inner } else { outer };
-        Position(angle.cos() * radius, angle.sin() * radius, 0.0)
+        Position(angle.cos() * radius, angle.sin() * radius)
     }
 }
 
@@ -143,7 +156,7 @@ impl Texture {
         )
     }
     fn ring(i: u32, res: u32) -> Texture {
-        let normalized_angle = i as f32 / (2.0 * res as f32);
+        let normalized_angle = (i / 2) as f32 / (res as f32);
         if i % 2 == 0 {
             Texture(normalized_angle, 0.0)
         } else {
@@ -158,7 +171,7 @@ impl MeshGenerator for VertexPC {
         let vertices = (0..4)
             .map(|i| VertexPC {
                 pos: Position::quad(width, height, i),
-                col: Color(1.0, 1.0, 1.0),
+                col: Color(1.0, 1.0, 1.0, 1.0),
             })
             .collect();
 
@@ -169,7 +182,7 @@ impl MeshGenerator for VertexPC {
         let vertices = (0..res * 2)
             .map(|i| VertexPC {
                 pos: Position::ring(i, inner, outer, res),
-                col: Color(1.0, 1.0, 1.0),
+                col: Color(1.0, 1.0, 1.0, 1.0),
             })
             .collect();
 

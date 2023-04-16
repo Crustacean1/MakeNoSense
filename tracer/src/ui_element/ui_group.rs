@@ -1,4 +1,4 @@
-use crate::application::MouseEvent;
+use crate::{application::MouseEvent, vec::Vec2};
 
 use super::{
     matrix::Matrix,
@@ -34,7 +34,7 @@ impl UiElementInner for UiGroup {
         self.bounding_rect
     }
 
-    fn on_mouse_event(&mut self, _pos: (f32, f32), event: MouseEvent) -> bool {
+    fn on_mouse_event(&mut self, _pos: (f32, f32), _event: MouseEvent) -> bool {
         true
     }
 
@@ -57,13 +57,13 @@ impl UiElementInner for UiGroup {
 
 impl UiGroup {
     pub fn new(
-        pos: (f32, f32),
-        size: (f32, f32),
+        pos: Vec2,
+        size: Vec2,
         level: u32,
         color: Color,
         children: Vec<Box<dyn UiElement>>,
     ) -> Box<dyn UiElement> {
-        let (mut v_buffer, i_buffer) = VertexPC::quad(size.0, size.1);
+        let (mut v_buffer, i_buffer) = VertexPC::quad(size.x, size.y);
         v_buffer
             .vertices
             .iter_mut()
@@ -73,14 +73,9 @@ impl UiGroup {
 
         Box::new(UiGroup {
             children,
-            bounding_rect: BoundingRect {
-                left: pos.0 - size.0,
-                top: pos.1 + size.1,
-                width: size.0 * 2.0,
-                height: size.1 * 2.0,
-            },
+            bounding_rect: BoundingRect::new(pos, size),
             mesh,
-            world_matrix: Matrix::trans(pos.0, pos.1, level as f32 * -0.1),
+            world_matrix: Matrix::translate(pos.x, pos.y, 0.0),
         })
     }
 }

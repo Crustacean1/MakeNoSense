@@ -1,20 +1,19 @@
-use std::cell::RefMut;
+use crate::{application::MouseEvent, vec::Vec2};
 
-use crate::application::MouseEvent;
-
-use self::{matrix::Matrix, shader::ShaderProgram, shader_context::ShaderContext};
+use self::{matrix::Matrix, shader_context::ShaderContext};
 
 pub mod shader;
 pub mod shader_context;
 pub mod ui_root;
+pub mod vertex;
 
 mod image;
 mod matrix;
 mod mesh;
+mod ui_dropdown;
 mod ui_group;
 mod ui_image_editor;
 mod ui_image_selection;
-mod vertex;
 
 #[derive(Clone, Copy)]
 pub struct BoundingRect {
@@ -24,12 +23,28 @@ pub struct BoundingRect {
     height: f32,
 }
 
+pub enum EditMode {
+    Edit,
+    Preview,
+}
+
 impl BoundingRect {
     pub fn contains(&self, pos: (f32, f32)) -> bool {
         pos.0 > self.left
             && pos.1 < self.top
             && pos.0 - self.left < self.width
             && self.top - pos.1 < self.height
+    }
+}
+
+impl BoundingRect {
+    pub fn new(pos: Vec2, size: Vec2) -> Self {
+        BoundingRect {
+            top: (pos.y + size.y),
+            left: (pos.x - size.x),
+            width: (size.x * 2.0),
+            height: (size.y * 2.0),
+        }
     }
 }
 

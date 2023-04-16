@@ -1,5 +1,7 @@
 use std::ops;
 
+use crate::vec::Vec2;
+
 #[derive(Clone, Copy)]
 pub struct Matrix {
     pub data: [[f32; 4]; 4],
@@ -13,7 +15,7 @@ impl Matrix {
         Self { data }
     }
 
-    pub fn trans(x: f32, y: f32, z: f32) -> Self {
+    pub fn translate(x: f32, y: f32, z: f32) -> Self {
         let mut mat = Self::ident();
         mat.data[3][0] = x;
         mat.data[3][1] = y;
@@ -43,5 +45,16 @@ impl ops::Mul<Matrix> for Matrix {
             }
         }
         Matrix { data: result }
+    }
+}
+
+impl ops::Mul<Vec2> for Matrix {
+    type Output = Vec2;
+    fn mul(self, rhs: Vec2) -> Self::Output {
+        let data = &self.data;
+        Vec2::new((
+            rhs.x * data[0][0] + rhs.y * data[1][0] + data[3][0],
+            rhs.x * data[0][1] + rhs.y * data[1][1] + data[3][1],
+        ))
     }
 }

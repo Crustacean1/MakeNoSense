@@ -1,5 +1,5 @@
 use glad_gl::gl;
-use std::fmt::Debug;
+
 use std::{mem, ptr};
 
 use super::vertex::{IndexBuffer, MeshType, Vertex, VertexBuffer};

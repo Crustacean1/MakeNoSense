@@ -5,9 +5,12 @@ extern crate glad_gl;
 extern crate glfw;
 
 mod application;
-mod image;
 mod ui_element;
 mod window_context;
+mod intersector;
+mod vec;
+mod linked_node;
+mod triangulator;
 
 fn main() {
     let mut program = Program::build("Final Solution", 1200, 800);

@@ -1,8 +1,11 @@
-use crate::application::{AppError, MouseEvent};
+use crate::{
+    application::{AppError, MouseEvent},
+    vec::Vec2,
+};
 
 use super::{
-    shader_context::ShaderContext, ui_group::UiGroup, ui_image_editor::UiImageEditor,
-    vertex::Color, UiElement,
+    matrix::Matrix, shader_context::ShaderContext, ui_dropdown::Dropdown, ui_group::UiGroup,
+    ui_image_editor::UiImageEditor, vertex::Color, UiElement,
 };
 
 pub struct UiRoot {
@@ -13,21 +16,25 @@ pub struct UiRoot {
 
 impl UiRoot {
     pub fn build() -> Result<Self, AppError> {
-        let selection = UiGroup::new((0.05, 0.125), (0.10, 0.25), 3, Color(0.0, 0.2, 0.9), vec![]);
-
-        let toolbox = UiGroup::new(
-            (0.75, 0.0),
-            (0.20, 0.5),
-            2,
-            Color(0.1, 0.3, 0.7),
-            vec![selection],
+        let dropdown = Dropdown::new(
+            Vec2::new((0.0, 0.125)),
+            Vec2::new((0.15, 0.04)),
+            vec!["jp2", "gmd"],
         );
 
-        let image_editor = UiImageEditor::new((0.0, 0.0), (0.99, 0.99), (1200, 800));
-        let image_editor = Box::new(image_editor.load_image("tracer/images/ratings.png")?);
+        let toolbox = UiGroup::new(
+            Vec2::new((1.25, 0.0)),
+            Vec2::new((0.25, 0.5)),
+            2,
+            Color(0.1, 0.3, 0.7, 1.0),
+            vec![Box::new(dropdown)],
+        );
+
+        let image_editor = UiImageEditor::new((0.0, 0.0), (0.99, 0.99), (1.2 / 0.8, 1.0));
+        let image_editor = Box::new(image_editor.load_image("tracer/images/boomer.jpg")?);
 
         Ok(UiRoot {
-            context: ShaderContext::build().expect("Failed to compile shaders"),
+            context: ShaderContext::build((1200, 800)).expect("Failed to compile shaders"),
             toolbox,
             image_editor,
         })

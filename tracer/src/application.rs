@@ -18,7 +18,7 @@ pub enum MouseEvent {
 
 pub trait Application {
     fn on_init(&mut self) {}
-    fn handle_event(&mut self, pos: (f32, f32), event: MouseEvent) {}
+    fn handle_event(&mut self, _pos: (f32, f32), _event: MouseEvent) {}
 
     fn get_title(&self) -> &'static str;
     fn get_resolution(&self) -> (u32, u32);
@@ -57,7 +57,7 @@ impl Application for Program {
         if let Some(ui_root) = &mut self.ui_root {
             unsafe {
                 gl::ClearColor(0.2, 0.2, 0.2, 1.0);
-                gl::Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT);
+                gl::Clear(gl::COLOR_BUFFER_BIT);
 
                 ui_root.render();
             }
