@@ -1,14 +1,24 @@
-use crate::{matrix::Matrix, vector::Vector3, AppError};
+use glium::{
+    index::PrimitiveType, uniform, Blend, BlendingFunction, Display, DrawParameters, IndexBuffer,
+    LinearBlendingFactor, Surface, VertexBuffer,
+};
+
+use crate::{
+    image_processor::{layer_renderer::LayerRenderer, ImageProcessor},
+    matrix::Matrix,
+    vector::Vector3,
+    AppError,
+};
 
 use super::{
     bounded_rect::BoundingRect,
     image::Image,
-    shader_context::ShaderContext,
-    vertex::{MeshGenerator, VertexPT},
+    mesh::Mesh,
+    rendering_context::RenderingContext,
+    ui_layer::UiLayer,
+    vertex::{VertexPC, VertexPT},
+    MouseEvent,
 };
-
-use glium::{index::PrimitiveType, uniform};
-use glium::{glutin, Surface};
 
 impl From<glium::index::BufferCreationError> for AppError {
     fn from(value: glium::index::BufferCreationError) -> Self {
@@ -28,69 +38,79 @@ impl From<glium::vertex::BufferCreationError> for AppError {
 
 pub struct UiImageEditor {
     image: Image,
-    quad: (glium::VertexBuffer<VertexPT>, glium::IndexBuffer<u32>),
-
+    canvas: Mesh<VertexPT>,
+    node: Mesh<VertexPC>,
     bounding_box: BoundingRect,
     world_matrix: Matrix,
+    display: Display,
     sensitivity: f32,
+    selected_node: Option<u32>,
 }
 
 impl UiImageEditor {
     pub fn new(
         filename: &str,
         display: &glium::Display,
-        (x, y): (f32, f32),
         (width, height): (f32, f32),
     ) -> Result<UiImageEditor, AppError> {
-        let (vertices, indices) = VertexPT::quad(width, height);
-        let bounding_box = BoundingRect::new((x, y), (width, height));
-        let image = Image::from_file(filename)?;
+        let display = display.clone();
+        let image = Image::from_file(&display, filename)?;
         let image_resolution = (image.width() as f32, image.height() as f32);
-        let quad = Self::create_scaled_quad(display, bounding_box, image_resolution)?;
+
+        let viewport = (width as f32, height as f32);
+        let bounding_box = Self::create_scaled_quad(viewport, image_resolution);
+
+        let canvas = Mesh::<VertexPT>::build_quad(&display, bounding_box)?;
+        let node = Mesh::<VertexPC>::build_ring(&display, 0.0, 5.0, 10)?;
+
+        let world_matrix = Matrix::ident();
 
         Ok(UiImageEditor {
-            quad,
+            canvas,
+            node,
             image,
-            world_matrix: Matrix::translate(Vector3::new(x, y, 0.0)),
-            bounding_box,
+            display,
+            world_matrix,
             sensitivity: 0.1,
+            selected_node: None,
+            bounding_box,
         })
     }
 
-    fn create_scaled_quad(
-        display: &glium::Display,
-        bounding_box: BoundingRect,
-        img_resolution: (f32, f32),
-    ) -> Result<(glium::VertexBuffer<VertexPT>, glium::IndexBuffer<u32>), AppError> {
-        let quad_size = (bounding_box.width, bounding_box.height);
-
-        let PhysicalSize { width, height } = display.gl_window().window().inner_size();
-        let axis_scaling = (
-            width as f32 / img_resolution.0,
-            height as f32 / img_resolution.1,
-        );
-
-        let maximal_scaling = f32::min(axis_scaling.0, axis_scaling.1);
-
-        Ok(Self::create_quad(
-            display,
-            (
-                quad_size.0 * img_resolution.0 * maximal_scaling,
-                quad_size.1 * img_resolution.1 * maximal_scaling,
-            ),
-        )?)
+    pub fn on_mouse_event(
+        &mut self,
+        cursor: (f32, f32),
+        event: MouseEvent,
+        image_processor: &mut ImageProcessor,
+    ) {
+        match event {
+            MouseEvent::Scroll(scroll) => self.scale_image(cursor, scroll),
+            MouseEvent::LeftClick(action) => {
+                let cursor = self.transform_cursor_pos(cursor);
+                match action {
+                    super::MouseEventAction::Released => {
+                        self.on_mouse_press(cursor, image_processor)
+                    }
+                    super::MouseEventAction::Pressed => {}
+                }
+            }
+            MouseEvent::Movement => self.on_movement(cursor, image_processor),
+            _ => {}
+        }
     }
 
-    fn create_quad(
-        display: &glium::Display,
-        (width, height): (f32, f32),
-    ) -> Result<(glium::VertexBuffer<VertexPT>, glium::IndexBuffer<u32>), AppError> {
-        let (vertices, indices) = VertexPT::quad(width, height);
+    fn create_scaled_quad(viewport: (f32, f32), image: (f32, f32)) -> BoundingRect {
+        let scaling = (viewport.0 / image.0, viewport.1 / image.1);
+        let max_scaling = f32::min(scaling.0, scaling.1);
 
-        Ok((
-            glium::VertexBuffer::new(display, vertices.as_slice())?,
-            glium::IndexBuffer::new(display, PrimitiveType::TrianglesList, indices.as_slice())?,
-        ))
+        let (width, height) = (image.0 * max_scaling * 0.5, image.1 * max_scaling * 0.5);
+
+        BoundingRect {
+            left: -width,
+            top: -height,
+            width: 2.0 * width,
+            height: 2.0 * height,
+        }
     }
 
     fn scale_image(&mut self, (x, y): (f32, f32), factor: f32) {
@@ -98,114 +118,170 @@ impl UiImageEditor {
         let factor = 1.0 + factor * self.sensitivity;
 
         if (scale > 0.2 || factor > 1.0) && (scale < 50.0 || factor < 1.0) {
-            let mat = Matrix::translate(Vector3::new(-x, -y, 0.0))
-                * Matrix::scale(factor)
-                * Matrix::translate(Vector3::new(x, y, 0.0));
-            self.world_matrix = self.world_matrix * mat;
+            let mat = Matrix::translate(Vector3::new(x, y, 0.0))
+                * Matrix::scale((factor, factor))
+                * Matrix::translate(Vector3::new(-x, -y, 0.0));
+            self.world_matrix = mat * self.world_matrix;
         }
     }
 
-    fn add_point(&mut self, pos: (f32, f32)) {
-        /*let pos = self.transform_cursor_pos(pos);
-        if let Some(latest_selection) = self.children.last_mut() {
-            latest_selection.add_point(pos);
-        }*/
+    fn on_mouse_press(&mut self, pos: (f32, f32), image_processor: &mut ImageProcessor) {
+        match self.selected_node {
+            Some(selected_node) => {
+                image_processor.handle_event(crate::image_processor::EditorEvent::PointSelected(
+                    selected_node as usize,
+                ));
+            }
+            None => {
+                println!("AAAA");
+                let pos = self.clamp_node(pos);
+                image_processor.handle_event(crate::image_processor::EditorEvent::NewPoint(pos));
+            }
+        }
     }
 
-    fn update_cursor(&mut self, pos: (f32, f32)) {
-        /*let pos = self.transform_cursor_pos(pos);
-        if let Some(latest_selection) = self.children.last_mut() {
-            latest_selection.update_cursor(pos);
-        }*/
+    fn on_movement(&mut self, pos: (f32, f32), image_processor: &mut ImageProcessor) {
+        let cursor = Vector3::new(pos.0, pos.1, 1.0);
+
+        let selected_node = image_processor
+            .nodes()
+            .iter()
+            .enumerate()
+            .map(|(i, node)| {
+                let node = self.world_matrix * Vector3::new(node.0, node.1, 1.0);
+                ((node - cursor).sqr_dst() as i32, i)
+            })
+            .filter(|(dst, _)| *dst < 200)
+            .min();
+
+        self.selected_node = match selected_node {
+            Some((_, i)) => Some(i as u32),
+            None => None,
+        };
     }
 
     fn transform_cursor_pos(&self, pos: (f32, f32)) -> (f32, f32) {
-        let (scale_pos, scale) = self.matrix_to_scale();
-        let pos = (pos.0 - scale_pos.0, pos.1 - scale_pos.1);
-        (pos.0 / scale, pos.1 / scale)
+        let cursor1 = Vector3::new(pos.0, pos.1, 1.0);
+
+        let inverse = self.world_matrix.st_inverse();
+        let cursor = inverse * cursor1;
+        (cursor.x, cursor.y)
     }
 
-    fn matrix_to_scale(&self) -> ((f32, f32), f32) {
-        let matrix = &self.world_matrix.data;
-
-        let scale = matrix[0][0];
-        let vec = (matrix[3][0], matrix[3][1]);
-        ((vec), scale)
-    }
-
-    fn add_selection(&mut self) {
-        //self.children.push(Box::new(UiImageSelection::new()));
-        //self.selection = Some((self.children.len() - 1) as u32);
-    }
-
-    fn render(&self, frame: &glium::Frame, context: &ShaderContext) {
-        let uniforms = uniform! {
-            world_matrix: self.world_matrix.data
-        };
-
-        frame.draw(
-            self.quad.0,
-            self.quad.1,
-            &context.tex_shader,
-            &uniforms,
-            Default::default(),
+    fn clamp_node(&self, (x, y): (f32, f32)) -> (f32, f32) {
+        let (min_x, max_x) = (
+            self.bounding_box.left,
+            self.bounding_box.left + self.bounding_box.width,
         );
-    }
-}
+        let (min_y, max_y) = (
+            self.bounding_box.top,
+            self.bounding_box.top + self.bounding_box.height,
+        );
 
-/*impl UiElementInner for UiImageEditor {
-    fn on_mouse_event(&mut self, pos: (f32, f32), event: MouseEvent) -> bool {
-        match event {
-            MouseEvent::Scroll(s) => self.scale_image(pos, s as f32),
-            MouseEvent::LeftClick => self.add_point(pos),
-            MouseEvent::Movement => self.update_cursor(pos),
-            MouseEvent::RightClick => self.add_selection(),
-            _ => (),
-        }
-        true
+        (x.max(min_x).min(max_x), y.max(min_y).min(max_y))
     }
 
-    fn render(&self, context: &mut ShaderContext) {
-        if context
-            .tex_shader
-            .set_matrix("world\x00", context.get_matrix())
-        {
-            self.image.bind(&mut context.tex_shader);
-            self.quad.render();
-        }
-    }
+    pub fn render(&self, image_processor: &ImageProcessor, context: &mut RenderingContext) {
+        let image_matrix = *context.get_matrix() * self.world_matrix;
 
-    fn set_position(&mut self, pos: (f32, f32)) {
-        self.pos = pos;
-        self.world_matrix = Matrix::translate(pos.0, pos.1, 0.0) * self.world_matrix;
-    }
-
-    fn get_bounding_box(&self) -> super::BoundingRect {
-        let (x, y) = self.pos;
-        let (width, height) = self.size;
-        let rect = BoundingRect {
-            left: x - width,
-            top: y + height,
-            width: width * 2.0,
-            height: height * 2.0,
+        let uniforms = uniform! {
+            texture0: self.image.texture(),
+            world: image_matrix.data
         };
-        rect
+
+        if let Some((tex_shader, frame)) = context.shader_context(1) {
+            self.canvas.render(frame, uniforms, tex_shader);
+        }
+
+        self.render_layers(context, image_processor.nodes(), image_processor.layers());
+        self.render_nodes(image_processor.nodes(), context);
     }
 
-    fn get_world_matrix(&self) -> &Matrix {
-        &self.world_matrix
+    fn render_nodes(&self, points: &Vec<(f32, f32)>, context: &mut RenderingContext) {
+        let base_matrix = *context.get_matrix();
+        if let Some((col_shader, frame)) = context.shader_context(0) {
+            points.iter().enumerate().for_each(|(i, point)| {
+                let translation = self.world_matrix * Vector3::new(point.0, point.1, 1.0);
+                let mut point_matrix = base_matrix * Matrix::translate(translation);
+
+                if let Some(index) = self.selected_node {
+                    if index as usize == i {
+                        point_matrix = point_matrix * Matrix::scale((1.5, 1.5));
+                    }
+                }
+
+                let col: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
+
+                let uniforms = uniform! {
+                    world: point_matrix.data,
+                    ufCol: col
+                };
+                self.node.render(frame, uniforms, col_shader);
+            })
+        }
     }
 
-    fn get_children<'b>(&'b self) -> Box<dyn Iterator<Item = &dyn UiElement> + 'b> {
-        Box::new(self.children.iter().map(|child| &**child as &dyn UiElement))
+    fn render_layers(
+        &self,
+        context: &mut RenderingContext,
+        vertices: &[(f32, f32)],
+        layers: &[UiLayer],
+    ) -> Result<(), AppError> {
+        let vertices: Vec<_> = vertices
+            .iter()
+            .map(|v| VertexPC {
+                pos: [v.0, v.1],
+                col: [1.0, 1.0, 1.0, 0.5],
+            })
+            .collect();
+
+        let image_matrix = *context.get_matrix() * self.world_matrix;
+
+        let vertex_buffer = VertexBuffer::new(&self.display, &vertices)?;
+        let mut draw_parameters: DrawParameters = Default::default();
+
+        draw_parameters.blend = Blend {
+            color: BlendingFunction::Addition {
+                source: LinearBlendingFactor::SourceAlpha,
+                destination: LinearBlendingFactor::OneMinusSourceAlpha,
+            },
+            alpha: BlendingFunction::Addition {
+                source: LinearBlendingFactor::SourceAlpha,
+                destination: LinearBlendingFactor::OneMinusSourceAlpha,
+            },
+            constant_value: (1.0, 1.0, 1.0, 1.0),
+        };
+
+        layers.iter().for_each(|layer| {
+            if let Some((col_shader, frame)) = context.shader_context(0) {
+                let index_buffer = self.create_index_buffer(layer);
+                let uniforms = uniform! {
+                    world: image_matrix.data,
+                    ufCol: layer.layer_info().color
+                };
+
+                frame
+                    .draw(
+                        &vertex_buffer,
+                        &index_buffer,
+                        col_shader,
+                        &uniforms,
+                        &draw_parameters,
+                    )
+                    .unwrap();
+            }
+        });
+        Ok(())
     }
 
-    fn get_children_mut<'b>(&'b mut self) -> Box<dyn Iterator<Item = &mut dyn UiElement> + 'b> {
-        Box::new(
-            self.children
-                .iter_mut()
-                .map(|child| &mut **child as &mut dyn UiElement),
-        )
+    fn create_index_buffer(&self, layer: &UiLayer) -> IndexBuffer<u32> {
+        let mut triangles = Vec::with_capacity(layer.triangles().len() * 3);
+        layer.triangles().iter().for_each(|tr| {
+            triangles.push(tr[0]);
+            triangles.push(tr[1]);
+            triangles.push(tr[2])
+        });
+
+        IndexBuffer::new(&self.display, PrimitiveType::TrianglesList, &triangles).unwrap()
     }
 }
-*/

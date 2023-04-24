@@ -828,32 +828,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "glad-gl"
-version = "2.0.4"
-
-[[package]]
-name = "glfw"
-version = "0.51.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "919ebc7bdbf60a529689a5e58f80d9dcde27e3d2ab4f2f7ce711ec439fe789c5"
-dependencies = [
- "bitflags",
- "glfw-sys",
- "objc",
- "raw-window-handle 0.5.2",
- "winapi",
-]
-
-[[package]]
-name = "glfw-sys"
-version = "4.0.0+3.3.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5abed6d39a50226676aab893d6b4ad154da7e93fcdfed90d7696758a1b477ed1"
-dependencies = [
- "cmake",
-]
-
-[[package]]
 name = "glium"
 version = "0.32.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1493,6 +1467,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "ppv-lite86"
+version = "0.2.17"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5b40af805b3121feab8a3c29f04d8ad262fa8e0561883e7653e024ae4479e6de"
+
+[[package]]
 name = "proc-macro-crate"
 version = "1.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1527,6 +1507,36 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4424af4bf778aae2051a77b60283332f386554255d722233d09fbfc7e30da2fc"
 dependencies = [
  "proc-macro2",
+]
+
+[[package]]
+name = "rand"
+version = "0.8.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "34af8d1a0e25924bc5b7c43c079c942339d8f0a8b57c39049bef581b46327404"
+dependencies = [
+ "libc",
+ "rand_chacha",
+ "rand_core",
+]
+
+[[package]]
+name = "rand_chacha"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e6c10a63a0fa32252be49d21e7709d4d4baf8d231c2dbce1eaa8141b9b127d88"
+dependencies = [
+ "ppv-lite86",
+ "rand_core",
+]
+
+[[package]]
+name = "rand_core"
+version = "0.6.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ec0be4795e2f6a28069bec0b5ff3e2ac9bafc99e6a9a7dc3547996c5c816922c"
+dependencies = [
+ "getrandom",
 ]
 
 [[package]]
@@ -1879,11 +1889,9 @@ dependencies = [
  "egui",
  "egui_demo_lib",
  "egui_glium",
- "glad-gl",
- "glfw",
  "glium",
  "image",
- "vertex_buffer_macro_derive",
+ "rand",
 ]
 
 [[package]]
@@ -1961,14 +1969,6 @@ name = "version_check"
 version = "0.9.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "49874b5167b65d7193b8aba1567f5c7d93d001cafc34600cee003eda787e483f"
-
-[[package]]
-name = "vertex_buffer_macro_derive"
-version = "0.1.0"
-dependencies = [
- "quote",
- "syn 1.0.109",
-]
 
 [[package]]
 name = "walkdir"

@@ -6,11 +6,9 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-glad-gl = {path="../glad-gl"}
-glfw = "0.51.0"
 egui_glium = "0.20.1"
 egui = "0.20.1"
 egui_demo_lib = "0.20.0"
 glium = "0.32"
 image = "0.24.6"
-vertex_buffer_macro_derive = {path = "../vertex_buffer_macro_derive"}
+rand = "0.8.5"

@@ -1,84 +1,79 @@
-use glad_gl::gl;
+use glium::{index::PrimitiveType, uniforms::Uniforms, Program, Surface};
 
-use std::{mem, ptr};
+use crate::AppError;
 
-use super::vertex::{IndexBuffer, MeshType, Vertex, VertexBuffer};
+use super::{
+    bounded_rect::BoundingRect,
+    vertex::{MeshGenerator, VertexPC, VertexPT},
+};
 
-pub struct Mesh<T, const N: usize>
-where
-    T: Vertex,
-{
-    vao: u32,
-    ebo: u32,
-    vbo: u32,
-
-    pub v_buffer: VertexBuffer<T>,
-    pub i_buffer: IndexBuffer<N>,
-    mesh_type: MeshType,
+pub struct Mesh<T: Copy + glium::Vertex> {
+    vertices: glium::VertexBuffer<T>,
+    indices: glium::IndexBuffer<u32>,
 }
 
-impl<T, const N: usize> Mesh<T, N>
-where
-    T: Vertex,
-{
-    pub fn build(vertices: VertexBuffer<T>, indices: IndexBuffer<N>, mesh_type: MeshType) -> Self {
-        let (vbo, ebo, vao) = Self::create();
+impl<T: Copy + glium::Vertex> Mesh<T> {
+    pub fn build_quad(
+        display: &glium::Display,
+        bounding_box: BoundingRect,
+    ) -> Result<Mesh<VertexPT>, AppError> {
+        let (vertices, indices) =
+            VertexPT::quad(bounding_box.width * 0.5, bounding_box.height * 0.5);
 
-        let mesh = Mesh {
-            ebo,
-            vbo,
-            vao,
-            v_buffer: vertices,
-            i_buffer: indices,
-            mesh_type,
-        };
-
-        mesh.load();
-        T::declare_layout();
-
-        mesh
+        Ok(Mesh {
+            vertices: glium::VertexBuffer::new(display, vertices.as_slice())?,
+            indices: glium::IndexBuffer::new(
+                display,
+                PrimitiveType::TrianglesList,
+                indices.as_slice(),
+            )?,
+        })
     }
 
-    pub fn load(&self) {
-        unsafe {
-            gl::BindVertexArray(self.vao);
-            gl::BindBuffer(gl::ARRAY_BUFFER, self.vbo);
-            gl::BufferData(
-                gl::ARRAY_BUFFER,
-                self.v_buffer.size() as isize,
-                mem::transmute(self.v_buffer.as_ptr()),
-                gl::STATIC_DRAW,
-            );
+    pub fn build_ring(
+        display: &glium::Display,
+        inner: f32,
+        outer: f32,
+        resolution: u32,
+    ) -> Result<Mesh<VertexPC>, AppError> {
+        let (vertices, indices) = VertexPC::ring(inner, outer, resolution);
 
-            gl::BindBuffer(gl::ELEMENT_ARRAY_BUFFER, self.ebo);
-            gl::BufferData(
-                gl::ELEMENT_ARRAY_BUFFER,
-                self.i_buffer.size() as isize,
-                mem::transmute(self.i_buffer.as_ptr()),
-                gl::STATIC_DRAW,
-            );
-        }
+        Ok(Mesh {
+            vertices: glium::VertexBuffer::new(display, vertices.as_slice())?,
+            indices: glium::IndexBuffer::new(
+                display,
+                PrimitiveType::TrianglesList,
+                indices.as_slice(),
+            )?,
+        })
     }
 
-    pub fn render(&self) {
-        unsafe {
-            gl::BindVertexArray(self.vao);
-            gl::DrawElements(
-                self.mesh_type.into_gl(),
-                self.i_buffer.index_count() as i32,
-                gl::UNSIGNED_INT,
-                ptr::null(),
-            );
-        }
+    pub fn build_polygon(display: &glium::Display) -> Result<Mesh<VertexPC>, AppError> {
+        let (vertices, indices) = ([], []);
+        Ok(Mesh {
+            vertices: glium::VertexBuffer::new(display, &vertices)?,
+            indices: glium::IndexBuffer::new(display, PrimitiveType::TrianglesList, &indices)?,
+        })
     }
 
-    fn create() -> (u32, u32, u32) {
-        let (mut vao, mut vbo, mut ebo) = (0, 0, 0);
-        unsafe {
-            gl::GenVertexArrays(1, &mut vao);
-            gl::GenBuffers(1, &mut vbo);
-            gl::GenBuffers(1, &mut ebo);
-        }
-        (vbo, ebo, vao)
+    pub fn update_vertices(
+        &mut self,
+        display: &glium::Display,
+        vertices: &[T],
+    ) -> Result<(), AppError> {
+        self.vertices = glium::VertexBuffer::new(display, &vertices)?;
+        Ok(())
+    }
+
+    pub fn render<Q: Uniforms>(&self, frame: &mut glium::Frame, uniforms: Q, program: &Program) {
+        frame
+            .draw(
+                &self.vertices,
+                &self.indices,
+                program,
+                &uniforms,
+                &Default::default(),
+            )
+            .unwrap();
     }
 }

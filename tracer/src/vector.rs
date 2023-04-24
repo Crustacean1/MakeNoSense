@@ -33,6 +33,10 @@ impl Vector3 {
         }
     }
 
+    pub fn sqr_dst(&self) -> f32 {
+        self.x * self.x + self.y * self.y + self.z * self.z
+    }
+
     pub fn from((x, y): (f32, f32)) -> Self {
         Vector3 { x, y, z: 0.0 }
     }

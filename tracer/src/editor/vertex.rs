@@ -1,17 +1,6 @@
-use glad_gl::gl;
 use glium::implement_vertex;
-use std::{self, mem};
-use vertex_buffer_macro_derive::{Vertex, VertexAttribute};
-
+use std;
 const PI: f32 = 3.1415926535;
-
-pub struct IndexBuffer<const T: usize> {
-    pub indices: Vec<[u32; T]>,
-}
-
-pub struct VertexBuffer<T> {
-    pub vertices: Vec<T>,
-}
 
 pub trait MeshGenerator {
     type Vertex;
@@ -22,13 +11,6 @@ pub trait MeshGenerator {
 trait VertexAttribute {
     fn get_size() -> usize;
     fn get_field_count() -> usize;
-}
-
-pub enum MeshType {
-    Triangles,
-    Lines,
-    LineStrip,
-    Points,
 }
 
 fn quad_ind() -> Vec<u32> {
@@ -51,20 +33,6 @@ fn ring_ind(res: u32) -> Vec<u32> {
         .collect()
 }
 
-impl<T> VertexBuffer<T> {
-    pub fn new(vertices: Vec<T>) -> Self {
-        VertexBuffer { vertices }
-    }
-
-    pub fn size(&self) -> usize {
-        self.vertices.len() * mem::size_of::<T>()
-    }
-
-    pub fn as_ptr(&self) -> &T {
-        unsafe { mem::transmute(self.vertices.as_ptr()) }
-    }
-}
-
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct VertexPC {
@@ -80,6 +48,7 @@ pub struct VertexPT {
 }
 
 implement_vertex!(VertexPT, pos, tex);
+implement_vertex!(VertexPC, pos, col);
 
 fn quad_pos(width: f32, height: f32, i: u32) -> [f32; 2] {
     [
@@ -110,6 +79,15 @@ fn ring_tex(i: u32, res: u32) -> [f32; 2] {
     }
 }
 
+fn ring_col(i: u32) -> [f32; 4] {
+        [1.0, 1.0, 1.0, 1.0]
+}
+
+fn modulus(a: f32, b: f32) -> f32 {
+    let i: i32 = (a / b) as i32;
+    a - b * i as f32
+}
+
 impl MeshGenerator for VertexPC {
     type Vertex = VertexPC;
     fn quad(width: f32, height: f32) -> (Vec<Self::Vertex>, Vec<u32>) {
@@ -127,7 +105,7 @@ impl MeshGenerator for VertexPC {
         let vertices = (0..res * 2)
             .map(|i| VertexPC {
                 pos: ring_pos(i, inner, outer, res),
-                col: [1.0, 1.0, 1.0, 1.0],
+                col: ring_col(i),
             })
             .collect();
 
