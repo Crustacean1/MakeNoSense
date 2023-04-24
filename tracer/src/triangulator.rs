@@ -42,76 +42,69 @@ impl ops::Mul for Vec2 {
 
 pub fn triangulate(vertices: &Vec<(f32, f32)>, indices: &Vec<u32>, triangles: &mut Vec<[u32; 3]>) {
     triangles.clear();
-    let points = indices
-        .iter()
-        .map(|&i| Vec2::new(vertices[i as usize].0, vertices[i as usize].1))
-        .collect();
-    triangulate_convex(&points, &indices, triangles);
+    triangulate_convex(vertices, &indices, triangles);
 }
 
 fn triangulate_convex(
-    points: &Vec<Vec2>,
+    vertices: &Vec<(f32, f32)>,
     indices: &Vec<u32>,
     triangles: &mut Vec<[u32; 3]>,
 ) -> Option<()> {
-    if points.len() < 3 {
+    if indices.len() < 3 {
         return None;
     }
+    let mut points_left: Vec<_> = indices
+        .iter()
+        .map(|&i| (i, Vec2::new(vertices[i as usize].0, vertices[i as usize].1)))
+        .collect();
 
-    let winding = compute_winding(points)?;
-
-    let mut ears = vec![];
-    let mut points_left = points.clone();
+    let winding = compute_winding(&points_left)?;
 
     while points_left.len() >= 3 {
-        let point = (0..points_left.len()).find(|point| {
-            let triangle = get_triangle(&points_left, *point);
-            let (s1, s2) = (triangle.0 - triangle.1, triangle.2 - triangle.1);
-            let cross = s1.cross(s2);
-            if cross * winding < 0.0 {
-                !points_left
-                    .iter()
-                    .any(|point| triangle_contains(triangle, *point))
-            } else {
-                false
-            }
-        });
-        match point {
+        match find_ear(&points_left, winding) {
             Some(point) => {
-                ears.push(point);
+                let ((i1, _), (i2, _), (i3, _)) = get_triangle(&points_left, point);
+                triangles.push([i1 as u32, i2 as u32, i3 as u32]);
                 points_left.remove(point);
             }
             None => {
-                println!("Fucksie wucksie");
                 break;
             }
         }
     }
-
-    let mut mesh_indices: Vec<_> = indices.clone();
-
-    ears.iter().for_each(|i| {
-        let (p1, p2, p3) = get_triangle(&mesh_indices, *i);
-        triangles.push([p1 as u32, p2 as u32, p3 as u32]);
-        mesh_indices.remove(*i);
-    });
-
     Some(())
 }
 
-fn compute_winding(points: &Vec<Vec2>) -> Option<f32> {
-    let origin = *points.first()?;
+fn find_ear(points: &Vec<(u32, Vec2)>, winding: f32) -> Option<usize> {
+    (0..points.len()).find(|&point| {
+        let ((_, v1), (_, v2), (_, v3)) = get_triangle(points, point);
+        let (s1, s2) = (v1 - v2, v3 - v2);
+        let cross = s1.cross(s2);
+        if cross * winding < 0.0 {
+            !points
+                .iter()
+                .any(|(_, vertex)| contains_triangle((v1, v2, v3), *vertex))
+        } else {
+            false
+        }
+    })
+}
 
-    let winding =
-        zip(points.iter().skip(1), points.iter().skip(2)).fold(0.0, |winding, (&v1, &v2)| {
+fn compute_winding(points: &Vec<(u32, Vec2)>) -> Option<f32> {
+    let (_, origin) = *points.first()?;
+
+    let winding = zip(points.iter().skip(1), points.iter().skip(2)).fold(
+        0.0,
+        |winding, (&(_, v1), &(_, v2))| {
             let v1 = v1 - origin;
             let v2 = v2 - origin;
             winding + v1.cross(v2)
-        });
+        },
+    );
     Some(winding)
 }
 
-fn triangle_contains(triangle: (Vec2, Vec2, Vec2), point: Vec2) -> bool {
+fn contains_triangle(triangle: (Vec2, Vec2, Vec2), point: Vec2) -> bool {
     let normals = (
         (triangle.0 - triangle.1).perp(),
         (triangle.1 - triangle.2).perp(),

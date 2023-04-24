@@ -1,7 +1,4 @@
-use crate::{
-    editor::{image_selection::LayerInfo, ui_layer::UiLayer},
-    AppError,
-};
+use crate::editor::{image_selection::LayerInfo, ui_layer::UiLayer};
 use rand::Rng;
 
 pub mod layer_renderer;
@@ -9,7 +6,6 @@ pub mod layer_renderer;
 #[derive(Debug)]
 pub enum EditorEvent {
     NewLayer(usize),
-    LayerSelected(usize),
     PointSelected(usize),
     NewPoint((f32, f32)),
     PointMoved(u32, (f32, f32)),
@@ -35,10 +31,6 @@ impl ImageProcessor {
         }
     }
 
-    pub fn get_selected_layer(&self) -> Option<&UiLayer> {
-        self.layers.get(self.selected_layer?)
-    }
-
     pub fn layer_types(&self) -> &Vec<LayerInfo> {
         &self.layer_types
     }
@@ -51,14 +43,22 @@ impl ImageProcessor {
         &self.nodes
     }
 
+    pub fn starting_node(&self) -> Option<(&u32, [f32; 4])> {
+        if let Some(layer) = self.selected_layer() {
+            if !layer.is_completed() {
+                Some((layer.indices().first()?, layer.layer_info().color))
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    }
+
     pub fn handle_event(&mut self, event: EditorEvent) {
-        println!("Handlin: {:?}", event);
         match event {
             EditorEvent::NewPoint(node) => {
-                self.on_add_node(node);
-            }
-            EditorEvent::NewLayer(id) => {
-                self.on_add_layer(id);
+                self.on_new_node(node);
             }
             EditorEvent::PointMoved(index, pos) => {
                 self.on_move_node(index as usize, pos);
@@ -89,10 +89,16 @@ impl ImageProcessor {
     }
 
     fn on_select_node(&mut self, node_index: usize) -> Option<()> {
-        if let Some(layer) = self.layers.get(self.selected_layer?) {
-            if node_index as u32 == *layer.indices().first()? {
-                self.selected_layer = None;
+        if let Some(selected_layer) = self.selected_layer_mut() {
+            if selected_layer.is_completed() {
+                self.add_layer();
+                self.selected_layer_mut()?.add_node(node_index as u32);
+            } else {
+                selected_layer.add_node(node_index as u32);
             }
+        } else {
+            self.add_layer();
+            self.selected_layer_mut()?.add_node(node_index as u32);
         }
         Some(())
     }
@@ -107,37 +113,37 @@ impl ImageProcessor {
         }
     }
 
-    fn on_add_node(&mut self, node: (f32, f32)) -> Option<()> {
-        match self.selected_layer {
-            Some(selected_layer) => {
-                if let Some(layer) = self.layers.get_mut(selected_layer) {
-                    self.nodes.push(node);
-                    layer.add_point(self.nodes.len() as u32 - 1);
+    fn on_new_node(&mut self, node: (f32, f32)) -> Option<()> {
+        match self.selected_layer() {
+            Some(layer) => {
+                if layer.is_completed() {
+                    self.add_layer();
                 }
-                Some(())
             }
             None => {
-                if let Some(layer_type) = self.layer_types.get(self.selected_layer_type) {
-                    if let Ok(mut new_layer) = UiLayer::new(layer_type.clone()) {
-                        self.nodes.push(node);
-                        new_layer.add_point(self.nodes.len() as u32 - 1);
-                        self.layers.push(new_layer);
-                        self.selected_layer = Some(self.layers.len() - 1);
-                    }
-                }
-                Some(())
+                self.add_layer();
+            }
+        }
+        self.nodes.push(node);
+        let new_node = self.nodes.len() - 1;
+        self.selected_layer_mut()?.add_node(new_node as u32);
+        Some(())
+    }
+
+    fn add_layer(&mut self) {
+        if let Some(layer_type) = self.layer_types.get(self.selected_layer_type) {
+            if let Ok(new_layer) = UiLayer::new(layer_type.clone()) {
+                self.layers.push(new_layer);
+                self.selected_layer = Some(self.layers.len() - 1);
             }
         }
     }
 
-    fn on_add_layer(&mut self, type_id: usize) -> Option<()> {
-        let layer_info = self.layer_types.get(type_id)?;
-        if let Ok(layer_info) = UiLayer::new(layer_info.clone()) {
-            self.layers.push(layer_info);
-            self.selected_layer = Some(self.layers.len() - 1);
-            Some(())
-        } else {
-            None
-        }
+    pub fn selected_layer_mut(&mut self) -> Option<&mut UiLayer> {
+        self.layers.get_mut(self.selected_layer?)
+    }
+
+    pub fn selected_layer(&self) -> Option<&UiLayer> {
+        self.layers.get(self.selected_layer?)
     }
 }

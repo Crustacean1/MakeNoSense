@@ -3,8 +3,8 @@ use glium::{glutin::dpi::PhysicalSize, Frame, Program};
 use crate::{image_processor::ImageProcessor, matrix::Matrix, vector::Vector3, AppError};
 
 use super::{
-    bounded_rect::BoundingRect, rendering_context::RenderingContext, shader::ShaderProgram,
-    ui_image_editor::UiImageEditor, MouseEvent,
+    bounded_rect::BoundingRect, image_renderer::ImageRenderer, rendering_context::RenderingContext,
+    shader::ShaderProgram, MouseEvent,
 };
 
 pub struct UiRoot {
@@ -14,7 +14,7 @@ pub struct UiRoot {
     aspect_matrix: Matrix,
     viewport_matrix: Matrix,
 
-    image_editor: UiImageEditor,
+    image_editor: ImageRenderer,
 }
 
 impl UiRoot {
@@ -34,7 +34,7 @@ impl UiRoot {
         let (aspect_matrix, viewport_matrix) = Self::get_viewport_martices(viewport, screen);
 
         let image_editor =
-            UiImageEditor::new(filename, display, (viewport.width, viewport.height))?;
+            ImageRenderer::new(filename, display, (viewport.width, viewport.height))?;
 
         let shaders = Self::build_shaders(display)?;
 
@@ -63,6 +63,7 @@ impl UiRoot {
         pos: (f32, f32),
         event: MouseEvent,
     ) {
+        //println!("Viewport: {:?}, pos: {:?}", self.viewport,pos);
         if self.viewport.contains(pos) {
             let cursor = Vector3::new(
                 pos.0 - self.screen.width * 0.5,

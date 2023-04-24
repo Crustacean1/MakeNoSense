@@ -3,12 +3,7 @@ use glium::{
     LinearBlendingFactor, Surface, VertexBuffer,
 };
 
-use crate::{
-    image_processor::{layer_renderer::LayerRenderer, ImageProcessor},
-    matrix::Matrix,
-    vector::Vector3,
-    AppError,
-};
+use crate::{image_processor::ImageProcessor, matrix::Matrix, vector::Vector3, AppError};
 
 use super::{
     bounded_rect::BoundingRect,
@@ -36,7 +31,7 @@ impl From<glium::vertex::BufferCreationError> for AppError {
     }
 }
 
-pub struct UiImageEditor {
+pub struct ImageRenderer {
     image: Image,
     canvas: Mesh<VertexPT>,
     node: Mesh<VertexPC>,
@@ -47,12 +42,12 @@ pub struct UiImageEditor {
     selected_node: Option<u32>,
 }
 
-impl UiImageEditor {
+impl ImageRenderer {
     pub fn new(
         filename: &str,
         display: &glium::Display,
         (width, height): (f32, f32),
-    ) -> Result<UiImageEditor, AppError> {
+    ) -> Result<ImageRenderer, AppError> {
         let display = display.clone();
         let image = Image::from_file(&display, filename)?;
         let image_resolution = (image.width() as f32, image.height() as f32);
@@ -65,7 +60,7 @@ impl UiImageEditor {
 
         let world_matrix = Matrix::ident();
 
-        Ok(UiImageEditor {
+        Ok(ImageRenderer {
             canvas,
             node,
             image,
@@ -133,7 +128,6 @@ impl UiImageEditor {
                 ));
             }
             None => {
-                println!("AAAA");
                 let pos = self.clamp_node(pos);
                 image_processor.handle_event(crate::image_processor::EditorEvent::NewPoint(pos));
             }
@@ -194,11 +188,15 @@ impl UiImageEditor {
         }
 
         self.render_layers(context, image_processor.nodes(), image_processor.layers());
-        self.render_nodes(image_processor.nodes(), context);
+        self.render_nodes(image_processor, context);
     }
 
-    fn render_nodes(&self, points: &Vec<(f32, f32)>, context: &mut RenderingContext) {
+    fn render_nodes(&self, image_processor: &ImageProcessor, context: &mut RenderingContext) {
         let base_matrix = *context.get_matrix();
+
+        let points = image_processor.nodes();
+        let starting_point = image_processor.starting_node();
+
         if let Some((col_shader, frame)) = context.shader_context(0) {
             points.iter().enumerate().for_each(|(i, point)| {
                 let translation = self.world_matrix * Vector3::new(point.0, point.1, 1.0);
@@ -210,7 +208,13 @@ impl UiImageEditor {
                     }
                 }
 
-                let col: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
+                let mut col: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
+
+                if let Some((index, color)) = starting_point {
+                    if *index as usize == i {
+                        col = color;
+                    }
+                }
 
                 let uniforms = uniform! {
                     world: point_matrix.data,

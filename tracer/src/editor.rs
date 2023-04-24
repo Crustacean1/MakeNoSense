@@ -21,7 +21,7 @@ pub mod vertex;
 
 mod image;
 mod mesh;
-mod ui_image_editor;
+mod image_renderer;
 
 pub enum MouseEventAction {
     Pressed,
@@ -48,19 +48,17 @@ impl Editor {
     pub fn build(event_loop: &glutin::event_loop::EventLoop<()>) -> Result<Self, AppError> {
         let display = Self::create_display(&event_loop);
 
+        let sidebar_width = 200.0;
         let egui = egui_glium::EguiGlium::new(&display, &event_loop);
 
-        let sidebar_width = 200.0;
-
-        let screen_size = display.gl_window().window().inner_size();
-        let (screen_width, screen_height) = (
-            screen_size.width as f32 - sidebar_width,
-            screen_size.height as f32,
-        );
+        let (screen_width, screen_height) = display.get_framebuffer_dimensions();
 
         let ui_root = match UiRoot::build(
             "./tracer/images/boomer.jpg",
-            BoundingRect::from_quad((0.0, 0.0), (screen_width, screen_height)),
+            BoundingRect::from_quad(
+                (0.0, 0.0),
+                (screen_width as f32 - sidebar_width, screen_height as f32),
+            ),
             &display,
         ) {
             Ok(root) => root,
@@ -96,8 +94,8 @@ impl Editor {
         let window_builder = glutin::window::WindowBuilder::new()
             .with_resizable(true)
             .with_inner_size(glutin::dpi::LogicalSize {
-                width: 800.0,
-                height: 800.0,
+                width: 600.0,
+                height: 500.0,
             })
             .with_title("Make No Sense");
 
@@ -191,7 +189,7 @@ impl Editor {
 
         let repaint_after = self.egui.run(&self.display, |egui_ctx| {
             egui::SidePanel::right("Layers")
-                .min_width(200.0)
+                .exact_width(200.0)
                 .show(egui_ctx, |ui| {
                     Self::render_egui_combo_box(&mut self.image_processor, ui);
                     if ui.button("New layer").clicked() {
