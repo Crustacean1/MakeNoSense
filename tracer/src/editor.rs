@@ -1,3 +1,4 @@
+use ::image::DynamicImage;
 use egui::Ui;
 use glium::{
     glutin::{self, event_loop::ControlFlow},
@@ -20,8 +21,8 @@ pub mod ui_root;
 pub mod vertex;
 
 mod image;
-mod mesh;
 mod image_renderer;
+mod mesh;
 
 pub enum MouseEventAction {
     Pressed,
@@ -39,6 +40,7 @@ pub struct Editor {
     display: glium::Display,
     egui: egui_glium::EguiGlium,
     ui_root: UiRoot,
+    image: DynamicImage,
     image_processor: ImageProcessor,
     mouse_position: (f32, f32),
     selected_layer_type: usize,
@@ -53,8 +55,12 @@ impl Editor {
 
         let (screen_width, screen_height) = display.get_framebuffer_dimensions();
 
+        let filename = "./tracer/images/boomer.jpg";
+
+        let image = Self::load_image(filename);
+
         let ui_root = match UiRoot::build(
-            "./tracer/images/boomer.jpg",
+            &image,
             BoundingRect::from_quad(
                 (0.0, 0.0),
                 (screen_width as f32 - sidebar_width, screen_height as f32),
@@ -68,22 +74,35 @@ impl Editor {
                 });
             }
         };
+
         let layer_types = [
             String::from("Masking"),
             String::from("Non masking"),
             String::from("Foreground"),
             String::from("Animal"),
         ];
-        let image_processor = ImageProcessor::new(&layer_types);
+
+        let image_resolution = (image.width(), image.height());
+        let image_processor = ImageProcessor::new(image_resolution, &layer_types);
 
         Ok(Editor {
             display,
             egui,
+            image,
             ui_root,
             image_processor,
             mouse_position: (0.0, 0.0),
             selected_layer_type: 0,
         })
+    }
+
+    fn load_image(filename: &str) -> DynamicImage {
+        match ::image::open(filename) {
+            Ok(img) => img,
+            Err(_) => {
+                panic!("Failed to open file: '{}'", filename);
+            }
+        }
     }
 
     pub fn main_loop<T>(&mut self, event: glutin::event::Event<T>, control_flow: &mut ControlFlow) {
@@ -94,8 +113,8 @@ impl Editor {
         let window_builder = glutin::window::WindowBuilder::new()
             .with_resizable(true)
             .with_inner_size(glutin::dpi::LogicalSize {
-                width: 600.0,
-                height: 500.0,
+                width: 1200.0,
+                height: 800.0,
             })
             .with_title("Make No Sense");
 
@@ -196,7 +215,10 @@ impl Editor {
                         self.image_processor
                             .handle_event(EditorEvent::NewLayer(self.selected_layer_type));
                     }
-                    if ui.button("Save").clicked() {}
+                    if ui.button("Save").clicked() {
+                        let scale = self.ui_root.get_image_scale();
+                        self.image_processor.handle_event(EditorEvent::Save(scale));
+                    }
                 });
         });
 

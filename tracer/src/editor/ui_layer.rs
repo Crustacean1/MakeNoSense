@@ -1,4 +1,7 @@
-use crate::{triangulator::triangulate, AppError};
+use crate::{
+    triangulator::{contains_triangle, triangulate, Vec2},
+    AppError,
+};
 
 use super::image_selection::LayerInfo;
 
@@ -12,15 +15,41 @@ pub struct UiLayer {
     triangles: Vec<[u32; 3]>,
     layer_info: LayerInfo,
     status: LayerStatus,
+    version: usize,
+    id: usize,
 }
 
 impl UiLayer {
-    pub fn new(layer_info: LayerInfo) -> Result<Self, AppError> {
+    pub fn new(id: usize, layer_info: LayerInfo) -> Result<Self, AppError> {
         Ok(UiLayer {
             triangles: vec![],
             indices: vec![],
             layer_info,
             status: LayerStatus::New,
+            version: 0,
+            id,
+        })
+    }
+
+    pub fn contains(&self, vertices: &Vec<(f32, f32)>, (x, y): (f32, f32)) -> bool {
+        self.triangles.iter().any(|&triangle| {
+            contains_triangle(
+                (
+                    (Vec2::new(
+                        vertices[triangle[0] as usize].0,
+                        vertices[triangle[0] as usize].1,
+                    )),
+                    (Vec2::new(
+                        vertices[triangle[1] as usize].0,
+                        vertices[triangle[1] as usize].1,
+                    )),
+                    (Vec2::new(
+                        vertices[triangle[2] as usize].0,
+                        vertices[triangle[2] as usize].1,
+                    )),
+                ),
+                Vec2::new(x, y),
+            )
         })
     }
 
@@ -42,6 +71,11 @@ impl UiLayer {
 
     pub fn update(&mut self, nodes: &Vec<(f32, f32)>) {
         triangulate(nodes, &self.indices, &mut self.triangles);
+        self.version += 1;
+    }
+
+    pub fn id(&self) -> usize {
+        self.id
     }
 
     pub fn triangles(&self) -> &Vec<[u32; 3]> {
@@ -61,5 +95,9 @@ impl UiLayer {
             LayerStatus::Finished => true,
             _ => false,
         }
+    }
+
+    pub fn version(&self) -> usize {
+        self.version
     }
 }

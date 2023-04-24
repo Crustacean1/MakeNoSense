@@ -1,7 +1,11 @@
 use crate::editor::{image_selection::LayerInfo, ui_layer::UiLayer};
 use rand::Rng;
 
+use self::mask_builder::build_mask;
+
 pub mod layer_renderer;
+pub mod layer_vertex_buffer;
+mod mask_builder;
 
 #[derive(Debug)]
 pub enum EditorEvent {
@@ -9,6 +13,7 @@ pub enum EditorEvent {
     PointSelected(usize),
     NewPoint((f32, f32)),
     PointMoved(u32, (f32, f32)),
+    Save(f32),
 }
 
 pub struct ImageProcessor {
@@ -16,18 +21,22 @@ pub struct ImageProcessor {
     pub selected_layer: Option<usize>,
     layer_types: Vec<LayerInfo>,
     layers: Vec<UiLayer>,
+    total_layer_count: usize,
     nodes: Vec<(f32, f32)>,
+    resolution: (u32, u32),
 }
 
 impl ImageProcessor {
-    pub fn new(layer_types: &[String]) -> Self {
+    pub fn new(resolution: (u32, u32), layer_types: &[String]) -> Self {
         let layer_types = Self::generate_layer_types(layer_types);
         Self {
             layer_types,
+            resolution,
             selected_layer_type: 0,
             selected_layer: None,
             layers: vec![],
             nodes: vec![],
+            total_layer_count: 0,
         }
     }
 
@@ -65,6 +74,10 @@ impl ImageProcessor {
             }
             EditorEvent::PointSelected(index) => {
                 self.on_select_node(index);
+            }
+            EditorEvent::Save(scale) => {
+                let image = build_mask(self.resolution, &self.nodes, &self.layers, scale);
+                image.save("./result.png");
             }
             _ => {}
         }
@@ -132,7 +145,8 @@ impl ImageProcessor {
 
     fn add_layer(&mut self) {
         if let Some(layer_type) = self.layer_types.get(self.selected_layer_type) {
-            if let Ok(new_layer) = UiLayer::new(layer_type.clone()) {
+            if let Ok(new_layer) = UiLayer::new(self.total_layer_count, layer_type.clone()) {
+                self.total_layer_count += 1;
                 self.layers.push(new_layer);
                 self.selected_layer = Some(self.layers.len() - 1);
             }

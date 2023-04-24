@@ -45,6 +45,28 @@ pub fn triangulate(vertices: &Vec<(f32, f32)>, indices: &Vec<u32>, triangles: &m
     triangulate_convex(vertices, &indices, triangles);
 }
 
+pub fn contains_triangle(triangle: (Vec2, Vec2, Vec2), point: Vec2) -> bool {
+    if (point.x < triangle.0.x && point.x < triangle.1.x && point.x < triangle.2.x)
+        || (point.x > triangle.0.x && point.x > triangle.1.x && point.x > triangle.2.x)
+        || (point.y < triangle.0.y && point.y < triangle.1.y && point.y < triangle.2.y)
+        || (point.y > triangle.0.y && point.y > triangle.1.y && point.y > triangle.2.y)
+    {
+        return false;
+    }
+    let normals = (
+        (triangle.0 - triangle.1).perp(),
+        (triangle.1 - triangle.2).perp(),
+        (triangle.2 - triangle.0).perp(),
+    );
+    let signs = (
+        (point - triangle.0) * normals.0,
+        (point - triangle.1) * normals.1,
+        (point - triangle.2) * normals.2,
+    );
+    (signs.0 < 0.0 && signs.1 < 0.0 && signs.2 < 0.0)
+        || (signs.0 > 0.0 && signs.1 > 0.0 && signs.2 > 0.0)
+}
+
 fn triangulate_convex(
     vertices: &Vec<(f32, f32)>,
     indices: &Vec<u32>,
@@ -102,21 +124,6 @@ fn compute_winding(points: &Vec<(u32, Vec2)>) -> Option<f32> {
         },
     );
     Some(winding)
-}
-
-fn contains_triangle(triangle: (Vec2, Vec2, Vec2), point: Vec2) -> bool {
-    let normals = (
-        (triangle.0 - triangle.1).perp(),
-        (triangle.1 - triangle.2).perp(),
-        (triangle.2 - triangle.0).perp(),
-    );
-    let signs = (
-        (point - triangle.0) * normals.0,
-        (point - triangle.1) * normals.1,
-        (point - triangle.2) * normals.2,
-    );
-    (signs.0 < 0.0 && signs.1 < 0.0 && signs.2 < 0.0)
-        || (signs.0 > 0.0 && signs.1 > 0.0 && signs.2 > 0.0)
 }
 
 fn get_triangle<T: Copy + std::fmt::Debug>(vertices: &Vec<T>, i: usize) -> (T, T, T) {

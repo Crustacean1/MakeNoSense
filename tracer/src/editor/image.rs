@@ -1,13 +1,11 @@
-use image::GenericImageView;
+use image::{DynamicImage, GenericImageView};
 
 use crate::AppError;
-
-use super::shader::ShaderProgram;
 
 impl From<glium::texture::TextureCreationError> for AppError {
     fn from(err: glium::texture::TextureCreationError) -> Self {
         AppError {
-            error_msg: format!("Error while loading teture: "),
+            error_msg: format!("Error while loading teture: {}", err.to_string()),
         }
     }
 }
@@ -31,20 +29,9 @@ impl Image {
         self.height
     }
 
-    pub fn from_file(display: &glium::Display, filename: &str) -> Result<Self, AppError> {
-        println!("Starting loading");
-        let img = match image::open(filename) {
-            Ok(img) => img,
-            Err(_) => {
-                return Err(AppError {
-                    error_msg: format!("Failed to open file: '{}'", filename),
-                });
-            }
-        };
-        println!("File loaded");
-
-        let (width, height) = img.dimensions();
-        let texture = img.into_rgba8();
+    pub fn from_file(display: &glium::Display, image: &DynamicImage) -> Result<Self, AppError> {
+        let (width, height) = image.dimensions();
+        let texture = image.clone().into_rgba8();
         let texture =
             glium::texture::RawImage2d::from_raw_rgba(texture.into_raw(), (width, height));
 

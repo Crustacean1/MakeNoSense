@@ -1,9 +1,16 @@
-use glium::{
-    index::PrimitiveType, uniform, Blend, BlendingFunction, Display, DrawParameters, IndexBuffer,
-    LinearBlendingFactor, Surface, VertexBuffer,
-};
+use std::collections::HashMap;
 
-use crate::{image_processor::ImageProcessor, matrix::Matrix, vector::Vector3, AppError};
+use glium::{uniform, Display};
+use image::DynamicImage;
+
+use crate::{
+    image_processor::{
+        layer_renderer::LayerRenderer, layer_vertex_buffer::LayerVertexBuffer, ImageProcessor,
+    },
+    matrix::Matrix,
+    vector::Vector3,
+    AppError,
+};
 
 use super::{
     bounded_rect::BoundingRect,
@@ -40,16 +47,19 @@ pub struct ImageRenderer {
     display: Display,
     sensitivity: f32,
     selected_node: Option<u32>,
+    layer_renderers: HashMap<usize, LayerRenderer>,
+    layer_vertex_buffer: LayerVertexBuffer,
+    image_scaling: f32,
 }
 
 impl ImageRenderer {
     pub fn new(
-        filename: &str,
+        image: &DynamicImage,
         display: &glium::Display,
         (width, height): (f32, f32),
     ) -> Result<ImageRenderer, AppError> {
         let display = display.clone();
-        let image = Image::from_file(&display, filename)?;
+        let image = Image::from_file(&display, image)?;
         let image_resolution = (image.width() as f32, image.height() as f32);
 
         let viewport = (width as f32, height as f32);
@@ -59,17 +69,26 @@ impl ImageRenderer {
         let node = Mesh::<VertexPC>::build_ring(&display, 0.0, 5.0, 10)?;
 
         let world_matrix = Matrix::ident();
+        let image_scaling = (image.width() as f32 / bounding_box.width)
+            .max(image.height() as f32 / bounding_box.height);
 
         Ok(ImageRenderer {
             canvas,
             node,
             image,
-            display,
             world_matrix,
             sensitivity: 0.1,
             selected_node: None,
             bounding_box,
+            layer_renderers: HashMap::new(),
+            layer_vertex_buffer: LayerVertexBuffer::build(&display)?,
+            display,
+            image_scaling,
         })
+    }
+
+    pub fn image_scale(&self) -> f32 {
+        self.image_scaling
     }
 
     pub fn on_mouse_event(
@@ -175,7 +194,11 @@ impl ImageRenderer {
         (x.max(min_x).min(max_x), y.max(min_y).min(max_y))
     }
 
-    pub fn render(&self, image_processor: &ImageProcessor, context: &mut RenderingContext) {
+    pub fn render(
+        &mut self,
+        image_processor: &ImageProcessor,
+        context: &mut RenderingContext,
+    ) -> Result<(), AppError> {
         let image_matrix = *context.get_matrix() * self.world_matrix;
 
         let uniforms = uniform! {
@@ -187,8 +210,11 @@ impl ImageRenderer {
             self.canvas.render(frame, uniforms, tex_shader);
         }
 
-        self.render_layers(context, image_processor.nodes(), image_processor.layers());
+        context.push(&self.world_matrix);
+        self.render_layers(context, image_processor.nodes(), image_processor.layers())?;
+        context.pop();
         self.render_nodes(image_processor, context);
+        Ok(())
     }
 
     fn render_nodes(&self, image_processor: &ImageProcessor, context: &mut RenderingContext) {
@@ -226,66 +252,30 @@ impl ImageRenderer {
     }
 
     fn render_layers(
-        &self,
+        &mut self,
         context: &mut RenderingContext,
         vertices: &[(f32, f32)],
         layers: &[UiLayer],
     ) -> Result<(), AppError> {
-        let vertices: Vec<_> = vertices
-            .iter()
-            .map(|v| VertexPC {
-                pos: [v.0, v.1],
-                col: [1.0, 1.0, 1.0, 0.5],
-            })
-            .collect();
+        self.layer_vertex_buffer.reload(&self.display, vertices);
 
-        let image_matrix = *context.get_matrix() * self.world_matrix;
-
-        let vertex_buffer = VertexBuffer::new(&self.display, &vertices)?;
-        let mut draw_parameters: DrawParameters = Default::default();
-
-        draw_parameters.blend = Blend {
-            color: BlendingFunction::Addition {
-                source: LinearBlendingFactor::SourceAlpha,
-                destination: LinearBlendingFactor::OneMinusSourceAlpha,
-            },
-            alpha: BlendingFunction::Addition {
-                source: LinearBlendingFactor::SourceAlpha,
-                destination: LinearBlendingFactor::OneMinusSourceAlpha,
-            },
-            constant_value: (1.0, 1.0, 1.0, 1.0),
-        };
-
-        layers.iter().for_each(|layer| {
-            if let Some((col_shader, frame)) = context.shader_context(0) {
-                let index_buffer = self.create_index_buffer(layer);
-                let uniforms = uniform! {
-                    world: image_matrix.data,
-                    ufCol: layer.layer_info().color
-                };
-
-                frame
-                    .draw(
-                        &vertex_buffer,
-                        &index_buffer,
-                        col_shader,
-                        &uniforms,
-                        &draw_parameters,
-                    )
-                    .unwrap();
+        for layer in layers {
+            if let Some(layer_renderer) = self.layer_renderers.get_mut(&layer.id()) {
+                layer_renderer.reload(&self.display, layer)?;
+            } else {
+                self.layer_renderers.insert(
+                    layer.id(),
+                    LayerRenderer::build(&self.display, layer.layer_info().clone())?,
+                );
             }
-        });
+        }
+
+        for layer in layers {
+            if let Some(layer_renderer) = self.layer_renderers.get_mut(&layer.id()) {
+                layer_renderer.render(self.layer_vertex_buffer.vertex_buffer(), context);
+            }
+        }
+
         Ok(())
-    }
-
-    fn create_index_buffer(&self, layer: &UiLayer) -> IndexBuffer<u32> {
-        let mut triangles = Vec::with_capacity(layer.triangles().len() * 3);
-        layer.triangles().iter().for_each(|tr| {
-            triangles.push(tr[0]);
-            triangles.push(tr[1]);
-            triangles.push(tr[2])
-        });
-
-        IndexBuffer::new(&self.display, PrimitiveType::TrianglesList, &triangles).unwrap()
     }
 }

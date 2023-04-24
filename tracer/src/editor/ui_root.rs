@@ -1,4 +1,5 @@
 use glium::{glutin::dpi::PhysicalSize, Frame, Program};
+use image::DynamicImage;
 
 use crate::{image_processor::ImageProcessor, matrix::Matrix, vector::Vector3, AppError};
 
@@ -19,7 +20,7 @@ pub struct UiRoot {
 
 impl UiRoot {
     pub fn build(
-        filename: &str,
+        image: &DynamicImage,
         viewport: BoundingRect,
         display: &glium::Display,
     ) -> Result<UiRoot, AppError> {
@@ -33,8 +34,7 @@ impl UiRoot {
 
         let (aspect_matrix, viewport_matrix) = Self::get_viewport_martices(viewport, screen);
 
-        let image_editor =
-            ImageRenderer::new(filename, display, (viewport.width, viewport.height))?;
+        let image_editor = ImageRenderer::new(image, display, (viewport.width, viewport.height))?;
 
         let shaders = Self::build_shaders(display)?;
 
@@ -55,6 +55,10 @@ impl UiRoot {
         context.push(&self.aspect_matrix);
         context.push(&self.viewport_matrix);
         self.image_editor.render(image_processor, &mut context);
+    }
+
+    pub fn get_image_scale(&self) -> f32{
+        self.image_editor.image_scale()
     }
 
     pub fn on_mouse_event(
