@@ -9,10 +9,10 @@ use std::{
 use editor::Editor;
 use glium::glutin;
 
-mod triangulator;
-mod image_processor;
 mod editor;
+mod image_processor;
 mod matrix;
+mod triangulator;
 mod vector;
 
 #[derive(Debug, Clone)]

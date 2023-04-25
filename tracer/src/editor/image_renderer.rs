@@ -1,12 +1,8 @@
-use std::collections::HashMap;
-
-use glium::{uniform, Display};
+use glium::{uniform, Display, VertexBuffer};
 use image::DynamicImage;
 
 use crate::{
-    image_processor::{
-        layer_renderer::LayerRenderer, layer_vertex_buffer::LayerVertexBuffer, ImageProcessor,
-    },
+    image_processor::{layer_renderer::render_layer, ImageProcessor},
     matrix::Matrix,
     vector::Vector3,
     AppError,
@@ -17,7 +13,6 @@ use super::{
     image::Image,
     mesh::Mesh,
     rendering_context::RenderingContext,
-    ui_layer::UiLayer,
     vertex::{VertexPC, VertexPT},
     MouseEvent,
 };
@@ -42,14 +37,13 @@ pub struct ImageRenderer {
     image: Image,
     canvas: Mesh<VertexPT>,
     node: Mesh<VertexPC>,
+    starting_node: Mesh<VertexPC>,
+    display: Display,
     bounding_box: BoundingRect,
     world_matrix: Matrix,
-    display: Display,
-    sensitivity: f32,
+    image_matrix: Matrix,
     selected_node: Option<u32>,
-    layer_renderers: HashMap<usize, LayerRenderer>,
-    layer_vertex_buffer: LayerVertexBuffer,
-    image_scaling: f32,
+    sensitivity: f32,
 }
 
 impl ImageRenderer {
@@ -67,28 +61,26 @@ impl ImageRenderer {
 
         let canvas = Mesh::<VertexPT>::build_quad(&display, bounding_box)?;
         let node = Mesh::<VertexPC>::build_ring(&display, 0.0, 5.0, 10)?;
+        let starting_node = Mesh::<VertexPC>::build_ring(&display, 5.0, 8.0, 10)?;
 
         let world_matrix = Matrix::ident();
-        let image_scaling = (image.width() as f32 / bounding_box.width)
-            .max(image.height() as f32 / bounding_box.height);
+
+        let image_scaling = (bounding_box.width / image.width() as f32)
+            .max(bounding_box.height / image.height() as f32);
+        let image_matrix = Matrix::scale((image_scaling, image_scaling));
 
         Ok(ImageRenderer {
             canvas,
             node,
+            starting_node,
             image,
             world_matrix,
+            image_matrix,
             sensitivity: 0.1,
             selected_node: None,
             bounding_box,
-            layer_renderers: HashMap::new(),
-            layer_vertex_buffer: LayerVertexBuffer::build(&display)?,
             display,
-            image_scaling,
         })
-    }
-
-    pub fn image_scale(&self) -> f32 {
-        self.image_scaling
     }
 
     pub fn on_mouse_event(
@@ -159,12 +151,13 @@ impl ImageRenderer {
         let selected_node = image_processor
             .nodes()
             .iter()
-            .enumerate()
-            .map(|(i, node)| {
-                let node = self.world_matrix * Vector3::new(node.0, node.1, 1.0);
-                ((node - cursor).sqr_dst() as i32, i)
+            .map(|&node| {
+                let vertex = image_processor.vertices()[node];
+                let vertex =
+                    self.world_matrix * self.image_matrix * Vector3::new(vertex.0, vertex.1, 1.0);
+                ((vertex - cursor).sqr_dst() as i32, node)
             })
-            .filter(|(dst, _)| *dst < 200)
+            .filter(|(dst, _)| *dst < 100)
             .min();
 
         self.selected_node = match selected_node {
@@ -176,19 +169,19 @@ impl ImageRenderer {
     fn transform_cursor_pos(&self, pos: (f32, f32)) -> (f32, f32) {
         let cursor1 = Vector3::new(pos.0, pos.1, 1.0);
 
-        let inverse = self.world_matrix.st_inverse();
+        let inverse = self.image_matrix.st_inverse() * self.world_matrix.st_inverse();
         let cursor = inverse * cursor1;
         (cursor.x, cursor.y)
     }
 
     fn clamp_node(&self, (x, y): (f32, f32)) -> (f32, f32) {
         let (min_x, max_x) = (
-            self.bounding_box.left,
-            self.bounding_box.left + self.bounding_box.width,
+            -(self.image.width() as f32 * 0.5),
+            (self.image.width() as f32 * 0.5),
         );
         let (min_y, max_y) = (
-            self.bounding_box.top,
-            self.bounding_box.top + self.bounding_box.height,
+            -(self.image.height() as f32 * 0.5),
+            (self.image.height() as f32 * 0.5),
         );
 
         (x.max(min_x).min(max_x), y.max(min_y).min(max_y))
@@ -199,6 +192,19 @@ impl ImageRenderer {
         image_processor: &ImageProcessor,
         context: &mut RenderingContext,
     ) -> Result<(), AppError> {
+        self.render_image(context);
+
+        context.push(&self.world_matrix);
+        context.push(&self.image_matrix);
+        self.render_layers(image_processor, context)?;
+        context.pop();
+        context.pop();
+
+        self.render_nodes(image_processor, context);
+        Ok(())
+    }
+
+    fn render_image(&self, context: &mut RenderingContext) {
         let image_matrix = *context.get_matrix() * self.world_matrix;
 
         let uniforms = uniform! {
@@ -209,73 +215,89 @@ impl ImageRenderer {
         if let Some((tex_shader, frame)) = context.shader_context(1) {
             self.canvas.render(frame, uniforms, tex_shader);
         }
-
-        context.push(&self.world_matrix);
-        self.render_layers(context, image_processor.nodes(), image_processor.layers())?;
-        context.pop();
-        self.render_nodes(image_processor, context);
-        Ok(())
     }
 
     fn render_nodes(&self, image_processor: &ImageProcessor, context: &mut RenderingContext) {
         let base_matrix = *context.get_matrix();
+        let image_matrix = self.world_matrix * self.image_matrix;
 
-        let points = image_processor.nodes();
-        let starting_point = image_processor.starting_node();
+        let indices: &[u32] = match image_processor.selected_layer() {
+            Some(layer) => layer.indices(),
+            None => &[],
+        };
+
+        let starting_point = match image_processor.selected_layer() {
+            Some(layer) => match layer.indices().first() {
+                Some(&point) => point as usize,
+                None => image_processor.vertices().len(),
+            },
+            None => image_processor.vertices().len(),
+        };
+
+        let selected_node = match self.selected_node {
+            Some(node) => node as usize,
+            None => image_processor.vertices().len(),
+        };
+
+        let layer_color = if let Some(layer) = image_processor.selected_layer() {
+            layer.layer_info().color
+        } else {
+            [1.0, 1.0, 1.0, 1.0]
+        };
 
         if let Some((col_shader, frame)) = context.shader_context(0) {
-            points.iter().enumerate().for_each(|(i, point)| {
-                let translation = self.world_matrix * Vector3::new(point.0, point.1, 1.0);
-                let mut point_matrix = base_matrix * Matrix::translate(translation);
+            image_processor
+                .nodes()
+                .iter()
+                .map(|&node| (node, image_processor.vertices()[node]))
+                .for_each(|(node, vertex)| {
+                    let translation = image_matrix * Vector3::new(vertex.0, vertex.1, 1.0);
 
-                if let Some(index) = self.selected_node {
-                    if index as usize == i {
-                        point_matrix = point_matrix * Matrix::scale((1.5, 1.5));
+                    let point_matrix = if node == selected_node {
+                        base_matrix * Matrix::translate(translation) * Matrix::scale((1.5, 1.5))
+                    } else {
+                        base_matrix * Matrix::translate(translation)
+                    };
+
+                    let node_color = if indices.iter().any(|&i| i as usize == node) {
+                        layer_color
+                    } else {
+                        [1.0, 1.0, 1.0, 1.0]
+                    };
+
+                    let uniforms = uniform! {
+                        world: point_matrix.data,
+                        ufCol: node_color
+                    };
+
+                    if node == starting_point {
+                        self.starting_node.render(frame, uniforms, col_shader);
+                    } else {
+                        self.node.render(frame, uniforms, col_shader);
                     }
-                }
-
-                let mut col: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
-
-                if let Some((index, color)) = starting_point {
-                    if *index as usize == i {
-                        col = color;
-                    }
-                }
-
-                let uniforms = uniform! {
-                    world: point_matrix.data,
-                    ufCol: col
-                };
-                self.node.render(frame, uniforms, col_shader);
-            })
+                });
         }
     }
 
     fn render_layers(
         &mut self,
+        image_processor: &ImageProcessor,
         context: &mut RenderingContext,
-        vertices: &[(f32, f32)],
-        layers: &[UiLayer],
     ) -> Result<(), AppError> {
-        self.layer_vertex_buffer.reload(&self.display, vertices);
-
-        for layer in layers {
-            if let Some(layer_renderer) = self.layer_renderers.get_mut(&layer.id()) {
-                layer_renderer.reload(&self.display, layer)?;
-            } else {
-                self.layer_renderers.insert(
-                    layer.id(),
-                    LayerRenderer::build(&self.display, layer.layer_info().clone())?,
-                );
+        let vertices: Vec<_> = image_processor
+            .vertices()
+            .iter()
+            .map(|&(x, y)| VertexPC {
+                pos: [x, y],
+                col: [1.0, 1.0, 1.0, 1.0],
+            })
+            .collect();
+        let vertices = VertexBuffer::new(&self.display, &vertices);
+        if let Ok(vertices) = vertices {
+            for layer in image_processor.layers() {
+                render_layer(&self.display, layer, &vertices, context)
             }
         }
-
-        for layer in layers {
-            if let Some(layer_renderer) = self.layer_renderers.get_mut(&layer.id()) {
-                layer_renderer.render(self.layer_vertex_buffer.vertex_buffer(), context);
-            }
-        }
-
         Ok(())
     }
 }

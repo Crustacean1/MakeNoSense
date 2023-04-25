@@ -12,10 +12,10 @@ pub enum LayerStatus {
 
 pub struct UiLayer {
     indices: Vec<u32>,
+    triangle_indices: Vec<u32>,
     triangles: Vec<[u32; 3]>,
     layer_info: LayerInfo,
     status: LayerStatus,
-    version: usize,
     id: usize,
 }
 
@@ -23,10 +23,10 @@ impl UiLayer {
     pub fn new(id: usize, layer_info: LayerInfo) -> Result<Self, AppError> {
         Ok(UiLayer {
             triangles: vec![],
+            triangle_indices: vec![],
             indices: vec![],
             layer_info,
             status: LayerStatus::New,
-            version: 0,
             id,
         })
     }
@@ -54,15 +54,11 @@ impl UiLayer {
     }
 
     pub fn add_node(&mut self, point: u32) {
-        if let Some((i, _)) = self
-            .indices
-            .iter()
-            .enumerate()
-            .find(|(_, index)| **index == point)
-        {
-            match i {
-                0 => self.status = LayerStatus::Finished,
-                _ => (),
+        if let Some(i) = self.indices.iter().position(|index| *index == point) {
+            if i == 0 {
+                self.status = LayerStatus::Finished;
+            } else if i == self.indices.len() - 1 {
+                self.indices.remove(i);
             }
         } else {
             self.indices.push(point);
@@ -71,7 +67,7 @@ impl UiLayer {
 
     pub fn update(&mut self, nodes: &Vec<(f32, f32)>) {
         triangulate(nodes, &self.indices, &mut self.triangles);
-        self.version += 1;
+        self.update_triangle_indices();
     }
 
     pub fn id(&self) -> usize {
@@ -97,7 +93,16 @@ impl UiLayer {
         }
     }
 
-    pub fn version(&self) -> usize {
-        self.version
+    pub fn triangle_indices(&self) -> &Vec<u32> {
+        &self.triangle_indices
+    }
+
+    fn update_triangle_indices(&mut self) {
+        self.triangle_indices.clear();
+        self.triangles.iter().for_each(|triangle| {
+            self.triangle_indices.push(triangle[0]);
+            self.triangle_indices.push(triangle[1]);
+            self.triangle_indices.push(triangle[2]);
+        })
     }
 }

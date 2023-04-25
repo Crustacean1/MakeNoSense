@@ -5,7 +5,6 @@ out vec4 fCol;
 uniform vec4 ufCol;
 
 void main(){
-    //fCol = vec4(vCol);
     fCol = ufCol;
 }
 

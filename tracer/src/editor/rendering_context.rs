@@ -1,6 +1,6 @@
 use glium::{Frame, Program};
 
-use crate::{matrix::Matrix, AppError};
+use crate::matrix::Matrix;
 
 pub struct RenderingContext<'a> {
     shaders: &'a Vec<Program>,

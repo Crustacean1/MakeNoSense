@@ -54,11 +54,9 @@ impl UiRoot {
         let mut context = RenderingContext::new(&self.shaders, frame);
         context.push(&self.aspect_matrix);
         context.push(&self.viewport_matrix);
-        self.image_editor.render(image_processor, &mut context);
-    }
-
-    pub fn get_image_scale(&self) -> f32{
-        self.image_editor.image_scale()
+        self.image_editor
+            .render(image_processor, &mut context)
+            .unwrap();
     }
 
     pub fn on_mouse_event(

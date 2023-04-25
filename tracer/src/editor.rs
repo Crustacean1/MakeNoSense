@@ -40,7 +40,6 @@ pub struct Editor {
     display: glium::Display,
     egui: egui_glium::EguiGlium,
     ui_root: UiRoot,
-    image: DynamicImage,
     image_processor: ImageProcessor,
     mouse_position: (f32, f32),
     selected_layer_type: usize,
@@ -55,7 +54,7 @@ impl Editor {
 
         let (screen_width, screen_height) = display.get_framebuffer_dimensions();
 
-        let filename = "./tracer/images/boomer.jpg";
+        let filename = "./tracer/Images/Kamil.Kowalski.3.png";
 
         let image = Self::load_image(filename);
 
@@ -88,7 +87,6 @@ impl Editor {
         Ok(Editor {
             display,
             egui,
-            image,
             ui_root,
             image_processor,
             mouse_position: (0.0, 0.0),
@@ -216,8 +214,7 @@ impl Editor {
                             .handle_event(EditorEvent::NewLayer(self.selected_layer_type));
                     }
                     if ui.button("Save").clicked() {
-                        let scale = self.ui_root.get_image_scale();
-                        self.image_processor.handle_event(EditorEvent::Save(scale));
+                        self.image_processor.handle_event(EditorEvent::Save);
                     }
                 });
         });
