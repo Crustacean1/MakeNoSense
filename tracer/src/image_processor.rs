@@ -1,11 +1,14 @@
 use crate::editor::{image_selection::LayerInfo, ui_layer::UiLayer};
 use rand::Rng;
 
-use self::layer_image_exporter::build_mask;
+use self::{
+    layer_image_exporter::build_mask,
+    layer_json_exporter::{export_to_json, ImageInfo},
+};
 
 mod layer_image_exporter;
-mod layer_json_exporter;
 
+pub mod layer_json_exporter;
 pub mod layer_renderer;
 
 #[derive(Debug)]
@@ -24,15 +27,18 @@ pub struct ImageProcessor {
     total_layer_count: usize,
     vertices: Vec<(f32, f32)>,
     nodes: Vec<usize>,
-    resolution: (u32, u32),
+    image_info: ImageInfo,
 }
 
 impl ImageProcessor {
-    pub fn new(resolution: (u32, u32), layer_types: &[String]) -> Self {
+    pub fn new(filename: &str, resolution: (u32, u32), layer_types: &[String]) -> Self {
         let layer_types = Self::generate_layer_types(layer_types);
         Self {
             layer_types,
-            resolution,
+            image_info: ImageInfo {
+                filename: String::from(filename),
+                resolution,
+            },
             selected_layer_type: 0,
             selected_layer_id: None,
             layers: vec![],
@@ -71,7 +77,14 @@ impl ImageProcessor {
                 self.prune_nodes();
             }
             EditorEvent::Save => {
-                let image = build_mask(self.resolution, &self.vertices, &self.layers);
+                export_to_json(
+                    "./image.coco.json",
+                    &self.image_info,
+                    &self.vertices,
+                    &self.layer_types,
+                    &self.layers,
+                );
+                let image = build_mask(self.image_info.resolution, &self.vertices, &self.layers);
                 match image.save("./result.png") {
                     Ok(_) => {
                         println!("Work saved");

@@ -6,7 +6,7 @@ use glium::{
 };
 
 use crate::{
-    image_processor::{EditorEvent, ImageProcessor},
+    image_processor::{layer_json_exporter::ImageInfo, EditorEvent, ImageProcessor},
     AppError,
 };
 
@@ -82,7 +82,7 @@ impl Editor {
         ];
 
         let image_resolution = (image.width(), image.height());
-        let image_processor = ImageProcessor::new(image_resolution, &layer_types);
+        let image_processor = ImageProcessor::new(filename, image_resolution, &layer_types);
 
         Ok(Editor {
             display,
@@ -209,10 +209,6 @@ impl Editor {
                 .exact_width(200.0)
                 .show(egui_ctx, |ui| {
                     Self::render_egui_combo_box(&mut self.image_processor, ui);
-                    if ui.button("New layer").clicked() {
-                        self.image_processor
-                            .handle_event(EditorEvent::NewLayer(self.selected_layer_type));
-                    }
                     if ui.button("Save").clicked() {
                         self.image_processor.handle_event(EditorEvent::Save);
                     }
