@@ -1,112 +1,135 @@
-/* this is shit, but here we go*/
-
-use core::fmt;
 use std::fs;
 
-use crate::editor::{image_selection::LayerInfo, ui_layer::UiLayer};
+use crate::editor::image_selection::LayerInfo;
+use serde::{Deserialize, Serialize};
+use serde_json::Result;
 
-pub struct ImageInfo {
-    pub filename: String,
-    pub resolution: (u32, u32),
+use super::triangle::Segmentation;
+
+#[derive(Serialize, Deserialize)]
+struct CocoInfo {
+    description: String,
 }
 
-pub fn export_to_json(
-    filename: &str,
-    image_info: &ImageInfo,
-    vertices: &[(f32, f32)],
-    layer_types: &[LayerInfo],
-    layers: &[UiLayer],
-) {
-    let mut result = String::new();
-    result.push_str("{");
-    save_meta_info(&mut result);
-    save_image_info(image_info, &mut result);
-    save_image_annotations(layers, vertices, &mut result);
-
-    result.push_str("}");
-
-    save_string_to_file(filename, &result);
+#[derive(Serialize, Deserialize)]
+struct CocoImages {
+    id: usize,
+    width: u32,
+    height: u32,
+    file_name: String,
 }
 
-fn save_string_to_file(filename: &str, content: &str) {
-    match fs::write(filename, content) {
-        Ok(_) => {
-            println!("File saved successfully");
-        }
-        Err(e) => {
-            println!("I fucked up: {}", e)
-        }
-    }
-}
-
-fn save_meta_info(output: &mut String) {
-    let raw = [&mut String::new()];
-    add_property("description", "\"project-name\"", raw[0]);
-    output.push_str(&wrap_in_obj("info", raw[0]));
-}
-
-fn save_image_info(image_info: &ImageInfo, output: &mut String) {
-    let mut raw = String::new();
-    raw.push_str("{");
-    add_property("id", "1", &mut raw);
-    add_property("width", image_info.resolution.0, &mut raw);
-    add_property("height", image_info.resolution.1, &mut raw);
-    add_property(
-        "file_name",
-        format!("\"{}\"", image_info.filename),
-        &mut raw,
-    );
-    raw.push_str("}");
-    let arr: [&str; 1] = [&raw];
-
-    output.push_str(&wrap_in_arr("images", &arr));
-}
-
-fn save_image_annotations(
-    id: &mut usize,
+#[derive(Serialize, Deserialize)]
+struct CocoAnnotations {
+    id: usize,
+    iscrowd: usize,
     image_id: usize,
-    layers: &[UiLayer],
-    vertices: &[(f32, f32)],
-    output: &mut String,
-) {
-    for layer in layers {
-        output.push_str("{");
-        add_property("id", id, output);
-        add_property("iscrowd", 0, output);
-        add_property("image_id", 0, output);
-        add_property("category_id", layer.layer_info().id(), output);
-        output.push_str("\"segmentation\" : [[");
-        for &point in layer.indices() {
-            output.push_str(&format!(
-                "{}, {}, ",
-                vertices[point as usize].0, vertices[point as usize].1
-            ));
+    category_id: usize,
+    segmentation: [Vec<f32>; 1],
+    bbox: [f32; 4],
+    area: f32,
+}
+
+#[derive(Serialize, Deserialize)]
+struct CocoCategory {
+    id: usize,
+    name: String,
+}
+
+#[derive(Serialize, Deserialize)]
+struct CocoStruct {
+    info: CocoInfo,
+    images: [CocoImages; 1],
+    annotations: Vec<CocoAnnotations>,
+    categories: Vec<CocoCategory>,
+}
+
+pub fn save_coco(
+    image: &str,
+    resolution: (u32, u32),
+    segmentations: &[Segmentation],
+    layer_info: &[LayerInfo],
+) -> Result<()> {
+    if let Some((filename, name, image_id)) = parse_image_path(image) {
+        let coco_struct = CocoStruct {
+            info: CocoInfo {
+                description: String::from("my-project-name"), /*Yes, it needs to be hardcoded...*/
+            },
+            images: [create_images(&filename, image_id, resolution)],
+            annotations: create_annotations(image_id, segmentations),
+            categories: create_layer_info(layer_info),
+        };
+        let data = serde_json::to_string(&coco_struct)?;
+
+        let output_filename = format!("{}.json", name);
+        fs::write(&output_filename, data).expect("Failed to write");
+    } else {
+        println!("Failed to parse filepath data");
+    }
+    Ok(())
+}
+
+fn parse_image_path(filepath: &str) -> Option<(String, String, usize)> {
+    let path_segments = filepath.split("/");
+    match path_segments.last() {
+        Some(filename) => {
+            let filename_segments = filename.split(".");
+            let mut filename_parts: Vec<_> = filename_segments.collect();
+            filename_parts.pop();
+            let name = filename_parts.join(".");
+            match filename_parts.pop() {
+                Some(image_id) => {
+                    if let Ok(image_id) = image_id.parse::<usize>() {
+                        Some((String::from(filename), name, image_id))
+                    } else {
+                        None
+                    }
+                }
+                _ => None,
+            }
         }
-        output.push_str("]],");
-        add_property("bbox", 0, output);
-        add_property("area", 0, output);
-        output.push_str("},");
-        *id += 1;
+        _ => None,
     }
 }
 
-fn save_image_layers(layers: &[UiLayer], output: &mut String) {}
-
-fn wrap_in_obj(name: &str, content: &str) -> String {
-    format!("\"{}\" : {{ {} }},", name, content)
-}
-
-fn wrap_in_arr(name: &str, content: &[&str]) -> String {
-    let mut inner = String::new();
-    for element in content {
-        inner.push_str(element);
-        inner.push(',');
+fn create_images(image: &str, image_id: usize, resolution: (u32, u32)) -> CocoImages {
+    CocoImages {
+        id: image_id,
+        width: resolution.0,
+        height: resolution.1,
+        file_name: String::from(image),
     }
-    inner.pop();
-
-    format!("\"{}\" : [{}],", name, inner)
 }
 
-fn add_property<T: fmt::Display>(name: &str, content: T, output: &mut String) {
-    output.push_str(&format!("\"{}\" : {}, ", name, content))
+fn create_annotations(image_id: usize, selections: &[Segmentation]) -> Vec<CocoAnnotations> {
+    selections
+        .iter()
+        .enumerate()
+        .map(|(i, selection)| {
+            let area = selection.area();
+            let bbox = selection.bounding_box();
+            let bbox = [bbox.left, bbox.top, bbox.width(), bbox.height()];
+            let segmentation = [selection.vertices().clone()];
+
+            CocoAnnotations {
+                id: i + 1,
+                iscrowd: 0,
+                image_id,
+                category_id: selection.type_id,
+                segmentation,
+                bbox,
+                area,
+            }
+        })
+        .collect()
+}
+
+fn create_layer_info(layer_info: &[LayerInfo]) -> Vec<CocoCategory> {
+    layer_info
+        .iter()
+        .map(|info| CocoCategory {
+            id: info.id,
+            name: info.layer_type.clone(),
+        })
+        .collect()
 }

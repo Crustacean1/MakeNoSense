@@ -4,14 +4,14 @@ use image::DynamicImage;
 use crate::{image_processor::ImageProcessor, matrix::Matrix, vector::Vector3, AppError};
 
 use super::{
-    bounded_rect::BoundingRect, image_renderer::ImageRenderer, rendering_context::RenderingContext,
+    bounded_rect::BoundingBox, image_renderer::ImageRenderer, rendering_context::RenderingContext,
     shader::ShaderProgram, MouseEvent,
 };
 
 pub struct UiRoot {
     shaders: Vec<Program>,
-    screen: BoundingRect,
-    viewport: BoundingRect,
+    screen: BoundingBox<i32>,
+    viewport: BoundingBox<i32>,
     aspect_matrix: Matrix,
     viewport_matrix: Matrix,
 
@@ -21,20 +21,19 @@ pub struct UiRoot {
 impl UiRoot {
     pub fn build(
         image: &DynamicImage,
-        viewport: BoundingRect,
+        viewport: BoundingBox<i32>,
         display: &glium::Display,
     ) -> Result<UiRoot, AppError> {
         let PhysicalSize { width, height } = display.gl_window().window().inner_size();
-        let screen = BoundingRect {
-            left: 0.0,
-            top: 0.0,
-            width: width as f32,
-            height: height as f32,
-        };
+        let screen = BoundingBox::new(0, 0, width as i32, height as i32);
 
         let (aspect_matrix, viewport_matrix) = Self::get_viewport_martices(viewport, screen);
 
-        let image_editor = ImageRenderer::new(image, display, (viewport.width, viewport.height))?;
+        let image_editor = ImageRenderer::new(
+            image,
+            display,
+            (viewport.width() as i32, viewport.height() as i32),
+        )?;
 
         let shaders = Self::build_shaders(display)?;
 
@@ -62,16 +61,16 @@ impl UiRoot {
     pub fn on_mouse_event(
         &mut self,
         image_processor: &mut ImageProcessor,
-        pos: (f32, f32),
+        pos: (i32, i32),
         event: MouseEvent,
     ) {
-        //println!("Viewport: {:?}, pos: {:?}", self.viewport,pos);
         if self.viewport.contains(pos) {
-            let cursor = Vector3::new(
-                pos.0 - self.screen.width * 0.5,
-                -(pos.1 - self.screen.height * 0.5),
-                1.0,
+            let center = (
+                (self.screen.left + self.screen.right) as f32 / 2.0,
+                (self.screen.top + self.screen.bottom) as f32 / 2.0,
             );
+
+            let cursor = Vector3::new(pos.0 as f32 - center.0, center.1 - pos.1 as f32, 1.0);
             let cursor = self.viewport_matrix.st_inverse() * cursor;
             let cursor = (cursor.x, cursor.y);
             self.image_editor
@@ -94,13 +93,23 @@ impl UiRoot {
         Ok(vec![col_shader, tex_shader])
     }
 
-    fn get_viewport_martices(viewport: BoundingRect, screen: BoundingRect) -> (Matrix, Matrix) {
-        let (screen_width, screen_height) = (screen.width * 0.5, screen.height * 0.5);
+    fn get_viewport_martices(
+        viewport: BoundingBox<i32>,
+        screen: BoundingBox<i32>,
+    ) -> (Matrix, Matrix) {
+        let (screen_half_width, screen_half_height) = (
+            (screen.right - screen.left) as f32 / 2.0,
+            (screen.bottom - screen.top) as f32 / 2.0,
+        );
 
-        let screen_center = (screen_width, screen_height);
         let viewport_center = (
-            viewport.left + viewport.width * 0.5,
-            viewport.top + viewport.height * 0.5,
+            (viewport.left + viewport.right) as f32 / 2.0,
+            (viewport.top + viewport.bottom) as f32 / 2.0,
+        );
+
+        let screen_center = (
+            (screen.left + screen.right) as f32 / 2.0,
+            (screen.top + screen.bottom) as f32 / 2.0,
         );
 
         let translation = (
@@ -109,8 +118,15 @@ impl UiRoot {
         );
 
         (
-            Matrix::scale((1.0 / screen_width, 1.0 / screen_height)),
-            Matrix::translate(Vector3::new(translation.0, translation.1, 1.0)),
+            Matrix::scale((
+                1.0 / screen_half_width as f32,
+                1.0 / screen_half_height as f32,
+            )),
+            Matrix::translate(Vector3::new(
+                translation.0 as f32,
+                translation.1 as f32,
+                1.0,
+            )),
         )
     }
 }

@@ -9,7 +9,7 @@ use crate::{
 };
 
 use super::{
-    bounded_rect::BoundingRect,
+    bounded_rect::BoundingBox,
     image::Image,
     mesh::Mesh,
     rendering_context::RenderingContext,
@@ -39,9 +39,8 @@ pub struct ImageRenderer {
     node: Mesh<VertexPC>,
     starting_node: Mesh<VertexPC>,
     display: Display,
-    bounding_box: BoundingRect,
+    bounding_box: BoundingBox<f32>,
     world_matrix: Matrix,
-    image_matrix: Matrix,
     selected_node: Option<u32>,
     sensitivity: f32,
 }
@@ -50,24 +49,26 @@ impl ImageRenderer {
     pub fn new(
         image: &DynamicImage,
         display: &glium::Display,
-        (width, height): (f32, f32),
+        (width, height): (i32, i32),
     ) -> Result<ImageRenderer, AppError> {
         let display = display.clone();
         let image = Image::from_file(&display, image)?;
-        let image_resolution = (image.width() as f32, image.height() as f32);
 
-        let viewport = (width as f32, height as f32);
-        let bounding_box = Self::create_scaled_quad(viewport, image_resolution);
+        let image_box = BoundingBox::<f32>::new(
+            (-(image.width() as i32) / 2) as f32,
+            (-(image.height() as i32) / 2) as f32,
+            (image.width() as i32 / 2) as f32,
+            (image.height() as i32 / 2) as f32,
+        );
 
-        let canvas = Mesh::<VertexPT>::build_quad(&display, bounding_box)?;
+        let canvas = Mesh::<VertexPT>::build_quad(&display, image_box)?;
         let node = Mesh::<VertexPC>::build_ring(&display, 0.0, 5.0, 10)?;
-        let starting_node = Mesh::<VertexPC>::build_ring(&display, 5.0, 8.0, 10)?;
+        let starting_node = Mesh::<VertexPC>::build_ring(&display, 5.0, 10.0, 10)?;
 
-        let world_matrix = Matrix::ident();
+        let image_scaling =
+            (width as f32 / image_box.width()).min(height as f32 / image_box.height());
 
-        let image_scaling = (bounding_box.width / image.width() as f32)
-            .max(bounding_box.height / image.height() as f32);
-        let image_matrix = Matrix::scale((image_scaling, image_scaling));
+        let world_matrix = Matrix::scale((image_scaling, image_scaling));
 
         Ok(ImageRenderer {
             canvas,
@@ -75,10 +76,9 @@ impl ImageRenderer {
             starting_node,
             image,
             world_matrix,
-            image_matrix,
             sensitivity: 0.1,
             selected_node: None,
-            bounding_box,
+            bounding_box: image_box,
             display,
         })
     }
@@ -102,20 +102,6 @@ impl ImageRenderer {
             }
             MouseEvent::Movement => self.on_movement(cursor, image_processor),
             _ => {}
-        }
-    }
-
-    fn create_scaled_quad(viewport: (f32, f32), image: (f32, f32)) -> BoundingRect {
-        let scaling = (viewport.0 / image.0, viewport.1 / image.1);
-        let max_scaling = f32::min(scaling.0, scaling.1);
-
-        let (width, height) = (image.0 * max_scaling * 0.5, image.1 * max_scaling * 0.5);
-
-        BoundingRect {
-            left: -width,
-            top: -height,
-            width: 2.0 * width,
-            height: 2.0 * height,
         }
     }
 
@@ -153,8 +139,7 @@ impl ImageRenderer {
             .iter()
             .map(|&node| {
                 let vertex = image_processor.vertices()[node];
-                let vertex =
-                    self.world_matrix * self.image_matrix * Vector3::new(vertex.0, vertex.1, 1.0);
+                let vertex = self.world_matrix * Vector3::new(vertex.0, vertex.1, 1.0);
                 ((vertex - cursor).sqr_dst() as i32, node)
             })
             .filter(|(dst, _)| *dst < 100)
@@ -169,22 +154,16 @@ impl ImageRenderer {
     fn transform_cursor_pos(&self, pos: (f32, f32)) -> (f32, f32) {
         let cursor1 = Vector3::new(pos.0, pos.1, 1.0);
 
-        let inverse = self.image_matrix.st_inverse() * self.world_matrix.st_inverse();
+        let inverse = self.world_matrix.st_inverse();
         let cursor = inverse * cursor1;
         (cursor.x, cursor.y)
     }
 
     fn clamp_node(&self, (x, y): (f32, f32)) -> (f32, f32) {
-        let (min_x, max_x) = (
-            -(self.image.width() as f32 * 0.5),
-            (self.image.width() as f32 * 0.5),
-        );
-        let (min_y, max_y) = (
-            -(self.image.height() as f32 * 0.5),
-            (self.image.height() as f32 * 0.5),
-        );
-
-        (x.max(min_x).min(max_x), y.max(min_y).min(max_y))
+        (
+            x.clamp(self.bounding_box.left, self.bounding_box.right),
+            y.clamp(self.bounding_box.top, self.bounding_box.bottom),
+        )
     }
 
     pub fn render(
@@ -193,23 +172,19 @@ impl ImageRenderer {
         context: &mut RenderingContext,
     ) -> Result<(), AppError> {
         self.render_image(context);
-
         context.push(&self.world_matrix);
-        context.push(&self.image_matrix);
         self.render_layers(image_processor, context)?;
         context.pop();
-        context.pop();
-
         self.render_nodes(image_processor, context);
+
         Ok(())
     }
 
     fn render_image(&self, context: &mut RenderingContext) {
-        let image_matrix = *context.get_matrix() * self.world_matrix;
-
+        let base_matrix = *context.get_matrix() * self.world_matrix;
         let uniforms = uniform! {
             texture0: self.image.texture(),
-            world: image_matrix.data
+            world: base_matrix.data
         };
 
         if let Some((tex_shader, frame)) = context.shader_context(1) {
@@ -218,8 +193,8 @@ impl ImageRenderer {
     }
 
     fn render_nodes(&self, image_processor: &ImageProcessor, context: &mut RenderingContext) {
-        let base_matrix = *context.get_matrix();
-        let image_matrix = self.world_matrix * self.image_matrix;
+        let world_matrix = *context.get_matrix();
+        let base_matrix = self.world_matrix;
 
         let indices: &[u32] = match image_processor.selected_layer() {
             Some(layer) => layer.indices(),
@@ -251,12 +226,11 @@ impl ImageRenderer {
                 .iter()
                 .map(|&node| (node, image_processor.vertices()[node]))
                 .for_each(|(node, vertex)| {
-                    let translation = image_matrix * Vector3::new(vertex.0, vertex.1, 1.0);
-
+                    let translation = base_matrix * Vector3::new(vertex.0, vertex.1, 1.0);
                     let point_matrix = if node == selected_node {
-                        base_matrix * Matrix::translate(translation) * Matrix::scale((1.5, 1.5))
+                        world_matrix * Matrix::translate(translation) * Matrix::scale((1.5, 1.5))
                     } else {
-                        base_matrix * Matrix::translate(translation)
+                        world_matrix * Matrix::translate(translation)
                     };
 
                     let node_color = if indices.iter().any(|&i| i as usize == node) {

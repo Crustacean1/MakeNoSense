@@ -3,7 +3,7 @@ use glium::{index::PrimitiveType, uniforms::Uniforms, Program, Surface};
 use crate::AppError;
 
 use super::{
-    bounded_rect::BoundingRect,
+    bounded_rect::BoundingBox,
     vertex::{MeshGenerator, VertexPC, VertexPT},
 };
 
@@ -15,10 +15,9 @@ pub struct Mesh<T: Copy + glium::Vertex> {
 impl<T: Copy + glium::Vertex> Mesh<T> {
     pub fn build_quad(
         display: &glium::Display,
-        bounding_box: BoundingRect,
+        bounding_box: BoundingBox<f32>,
     ) -> Result<Mesh<VertexPT>, AppError> {
-        let (vertices, indices) =
-            VertexPT::quad(bounding_box.width * 0.5, bounding_box.height * 0.5);
+        let (vertices, indices) = VertexPT::quad(bounding_box);
 
         Ok(Mesh {
             vertices: glium::VertexBuffer::new(display, vertices.as_slice())?,

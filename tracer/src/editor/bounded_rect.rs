@@ -1,26 +1,46 @@
+use std::{cmp, ops};
+
 #[derive(Clone, Copy, Debug)]
-pub struct BoundingRect {
-    pub top: f32,
-    pub left: f32,
-    pub width: f32,
-    pub height: f32,
+
+pub struct BoundingBox<
+    T: cmp::PartialOrd + ops::Add<Output = T> + ops::Sub<Output = T> + Clone + Copy,
+> {
+    pub top: T,
+    pub left: T,
+    pub right: T,
+    pub bottom: T,
 }
 
-impl BoundingRect {
-    pub fn from_quad((left, top): (f32, f32), (width, height): (f32, f32)) -> Self {
-        BoundingRect {
-            top,
+impl<T: cmp::PartialOrd + ops::Add<Output = T> + ops::Sub<Output = T> + Clone + Copy>
+    BoundingBox<T>
+{
+    pub fn new(left: T, top: T, right: T, bottom: T) -> Self {
+        Self {
             left,
-            width,
-            height,
+            top,
+            right,
+            bottom,
         }
     }
 
-    pub fn contains(&self, pos: (f32, f32)) -> bool {
-        pos.0 > self.left
-            && pos.1 > self.top
-            && pos.0 - self.left < self.width
-            && pos.1 - self.top < self.height
+    pub fn from_quad((left, top): (T, T), (width, height): (T, T)) -> Self {
+        BoundingBox {
+            top,
+            left,
+            bottom: top + height,
+            right: left + width,
+        }
+    }
+
+    pub fn contains(&self, pos: (T, T)) -> bool {
+        pos.0 > self.left && pos.1 > self.top && pos.0 < self.right && pos.1 < self.bottom
+    }
+
+    pub fn width(&self) -> T {
+        self.right - self.left
+    }
+
+    pub fn height(&self) -> T {
+        self.bottom - self.top
     }
 }
-

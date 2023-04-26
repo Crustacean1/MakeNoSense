@@ -11,6 +11,10 @@ impl Vec2 {
         Vec2 { x, y }
     }
 
+    pub fn from((x, y): (f32, f32)) -> Self {
+        Vec2 { x, y }
+    }
+
     pub fn cross(self, rhs: Vec2) -> f32 {
         self.x * rhs.y - self.y * rhs.x
     }
@@ -46,13 +50,6 @@ pub fn triangulate(vertices: &Vec<(f32, f32)>, indices: &Vec<u32>, triangles: &m
 }
 
 pub fn contains_triangle(triangle: (Vec2, Vec2, Vec2), point: Vec2) -> bool {
-    if (point.x < triangle.0.x && point.x < triangle.1.x && point.x < triangle.2.x)
-        || (point.x > triangle.0.x && point.x > triangle.1.x && point.x > triangle.2.x)
-        || (point.y < triangle.0.y && point.y < triangle.1.y && point.y < triangle.2.y)
-        || (point.y > triangle.0.y && point.y > triangle.1.y && point.y > triangle.2.y)
-    {
-        return false;
-    }
     let normals = (
         (triangle.0 - triangle.1).perp(),
         (triangle.1 - triangle.2).perp(),

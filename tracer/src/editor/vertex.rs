@@ -1,10 +1,12 @@
 use glium::implement_vertex;
 use std;
+
+use super::bounded_rect::BoundingBox;
 const PI: f32 = 3.1415926535;
 
 pub trait MeshGenerator {
     type Vertex;
-    fn quad(width: f32, height: f32) -> (Vec<Self::Vertex>, Vec<u32>);
+    fn quad(bounding_box: BoundingBox<f32>) -> (Vec<Self::Vertex>, Vec<u32>);
     fn ring(inner: f32, outer: f32, res: u32) -> (Vec<Self::Vertex>, Vec<u32>);
 }
 
@@ -14,7 +16,7 @@ trait VertexAttribute {
 }
 
 fn quad_ind() -> Vec<u32> {
-    vec![0, 1, 3, 2, 3, 0]
+    vec![0, 1, 2, 2, 3, 0]
 }
 
 fn ring_ind(res: u32) -> Vec<u32> {
@@ -80,7 +82,7 @@ fn ring_tex(i: u32, res: u32) -> [f32; 2] {
 }
 
 fn ring_col(i: u32) -> [f32; 4] {
-        [1.0, 1.0, 1.0, 1.0]
+    [1.0, 1.0, 1.0, 1.0]
 }
 
 fn modulus(a: f32, b: f32) -> f32 {
@@ -90,13 +92,25 @@ fn modulus(a: f32, b: f32) -> f32 {
 
 impl MeshGenerator for VertexPC {
     type Vertex = VertexPC;
-    fn quad(width: f32, height: f32) -> (Vec<Self::Vertex>, Vec<u32>) {
-        let vertices = (0..4)
-            .map(|i| VertexPC {
-                pos: quad_pos(width, height, i),
+    fn quad(bounding_box: BoundingBox<f32>) -> (Vec<Self::Vertex>, Vec<u32>) {
+        let vertices = vec![
+            VertexPC {
+                pos: [bounding_box.left, bounding_box.top],
                 col: [1.0, 1.0, 1.0, 1.0],
-            })
-            .collect();
+            },
+            VertexPC {
+                pos: [bounding_box.right, bounding_box.top],
+                col: [1.0, 1.0, 1.0, 1.0],
+            },
+            VertexPC {
+                pos: [bounding_box.right, bounding_box.bottom],
+                col: [1.0, 1.0, 1.0, 1.0],
+            },
+            VertexPC {
+                pos: [bounding_box.left, bounding_box.bottom],
+                col: [1.0, 1.0, 1.0, 1.0],
+            },
+        ];
 
         (vertices, quad_ind())
     }
@@ -115,13 +129,25 @@ impl MeshGenerator for VertexPC {
 
 impl MeshGenerator for VertexPT {
     type Vertex = VertexPT;
-    fn quad(width: f32, height: f32) -> (Vec<VertexPT>, Vec<u32>) {
-        let vertices = (0..4)
-            .map(|i| VertexPT {
-                pos: quad_pos(width, height, i),
-                tex: quad_tex(i),
-            })
-            .collect();
+    fn quad(bounding_box: BoundingBox<f32>) -> (Vec<VertexPT>, Vec<u32>) {
+        let vertices = vec![
+            VertexPT {
+                pos: [bounding_box.left, bounding_box.top],
+                tex: [0.0, 1.0],
+            },
+            VertexPT {
+                pos: [bounding_box.right, bounding_box.top],
+                tex: [1.0, 1.0],
+            },
+            VertexPT {
+                pos: [bounding_box.right, bounding_box.bottom],
+                tex: [1.0, 0.0],
+            },
+            VertexPT {
+                pos: [bounding_box.left, bounding_box.bottom],
+                tex: [0.0, 0.0],
+            },
+        ];
 
         (vertices, quad_ind())
     }

@@ -6,11 +6,11 @@ use glium::{
 };
 
 use crate::{
-    image_processor::{layer_json_exporter::ImageInfo, EditorEvent, ImageProcessor},
+    image_processor::{EditorEvent, ImageProcessor},
     AppError,
 };
 
-use self::{bounded_rect::BoundingRect, ui_root::UiRoot};
+use self::{bounded_rect::BoundingBox, ui_root::UiRoot};
 
 pub mod bounded_rect;
 pub mod image_selection;
@@ -41,28 +41,29 @@ pub struct Editor {
     egui: egui_glium::EguiGlium,
     ui_root: UiRoot,
     image_processor: ImageProcessor,
-    mouse_position: (f32, f32),
-    selected_layer_type: usize,
+    mouse_position: (i32, i32),
 }
 
 impl Editor {
-    pub fn build(event_loop: &glutin::event_loop::EventLoop<()>) -> Result<Self, AppError> {
+    pub fn build(
+        image_filename: &str,
+        label_filename: &str,
+        event_loop: &glutin::event_loop::EventLoop<()>,
+    ) -> Result<Self, AppError> {
         let display = Self::create_display(&event_loop);
 
-        let sidebar_width = 200.0;
+        let sidebar_width = 200;
         let egui = egui_glium::EguiGlium::new(&display, &event_loop);
 
         let (screen_width, screen_height) = display.get_framebuffer_dimensions();
 
-        let filename = "./tracer/Images/Kamil.Kowalski.3.png";
-
-        let image = Self::load_image(filename);
+        let image = Self::load_image(image_filename);
 
         let ui_root = match UiRoot::build(
             &image,
-            BoundingRect::from_quad(
-                (0.0, 0.0),
-                (screen_width as f32 - sidebar_width, screen_height as f32),
+            BoundingBox::from_quad(
+                (0, 0),
+                (screen_width as i32 - sidebar_width, screen_height as i32),
             ),
             &display,
         ) {
@@ -75,22 +76,21 @@ impl Editor {
         };
 
         let layer_types = [
-            String::from("Masking"),
-            String::from("Non masking"),
-            String::from("Foreground"),
+            String::from("NonMaskingBackground"),
+            String::from("MaskingBackground"),
             String::from("Animal"),
+            String::from("NonMaskingForegroundAttention"),
         ];
 
         let image_resolution = (image.width(), image.height());
-        let image_processor = ImageProcessor::new(filename, image_resolution, &layer_types);
+        let image_processor = ImageProcessor::new(image_filename, image_resolution, &layer_types);
 
         Ok(Editor {
             display,
             egui,
             ui_root,
             image_processor,
-            mouse_position: (0.0, 0.0),
-            selected_layer_type: 0,
+            mouse_position: (0, 0),
         })
     }
 
@@ -175,7 +175,7 @@ impl Editor {
                 }
             }
             glutin::event::WindowEvent::CursorMoved { position, .. } => {
-                self.mouse_position = (position.x as f32, position.y as f32);
+                self.mouse_position = (position.x as i32, position.y as i32);
                 self.ui_root.on_mouse_event(
                     &mut self.image_processor,
                     self.mouse_position,

@@ -2,11 +2,11 @@ use crate::editor::{image_selection::LayerInfo, ui_layer::UiLayer};
 use rand::Rng;
 
 use self::{
-    layer_image_exporter::build_mask,
-    layer_json_exporter::{export_to_json, ImageInfo},
+    layer_image_exporter::build_mask, layer_json_exporter::save_coco, triangle::Segmentation,
 };
 
 mod layer_image_exporter;
+mod triangle;
 
 pub mod layer_json_exporter;
 pub mod layer_renderer;
@@ -17,6 +17,11 @@ pub enum EditorEvent {
     PointSelected(usize),
     NewPoint((f32, f32)),
     Save,
+}
+
+pub struct ImageInfo {
+    filename: String,
+    resolution: (u32, u32),
 }
 
 pub struct ImageProcessor {
@@ -77,14 +82,23 @@ impl ImageProcessor {
                 self.prune_nodes();
             }
             EditorEvent::Save => {
-                export_to_json(
-                    "./image.coco.json",
-                    &self.image_info,
-                    &self.vertices,
+                let segmentations = self.create_segmentations();
+
+                match save_coco(
+                    &self.image_info.filename,
+                    self.image_info.resolution,
+                    &segmentations,
                     &self.layer_types,
-                    &self.layers,
-                );
-                let image = build_mask(self.image_info.resolution, &self.vertices, &self.layers);
+                ) {
+                    Ok(_) => {
+                        println!("Coco file saved");
+                    }
+                    Err(e) => {
+                        println!("Failed to save Coco file: {}", e)
+                    }
+                }
+
+                let image = build_mask(self.image_info.resolution, &segmentations);
                 match image.save("./result.png") {
                     Ok(_) => {
                         println!("Work saved");
@@ -98,6 +112,25 @@ impl ImageProcessor {
         }
     }
 
+    pub fn selected_layer_mut(&mut self) -> Option<&mut UiLayer> {
+        match self.selected_layer_id {
+            Some(selected_layer_id) => self
+                .layers
+                .iter_mut()
+                .find(|layer| layer.id() == selected_layer_id),
+            None => None,
+        }
+    }
+
+    pub fn selected_layer(&self) -> Option<&UiLayer> {
+        match self.selected_layer_id {
+            Some(selected_layer_id) => self
+                .layers
+                .iter()
+                .find(|layer| layer.id() == selected_layer_id),
+            None => None,
+        }
+    }
     fn prune_nodes(&mut self) {
         self.nodes.clear();
         self.vertices.iter().enumerate().for_each(|(i, _)| {
@@ -129,9 +162,11 @@ impl ImageProcessor {
         let mut rng = rand::thread_rng();
         types
             .iter()
-            .map(|name| LayerInfo {
+            .enumerate()
+            .map(|(i, name)| LayerInfo {
                 layer_type: name.clone(),
                 color: [rng.gen(), rng.gen(), rng.gen(), 0.5],
+                id: i + 1,
             })
             .collect()
     }
@@ -176,23 +211,19 @@ impl ImageProcessor {
         }
     }
 
-    pub fn selected_layer_mut(&mut self) -> Option<&mut UiLayer> {
-        match self.selected_layer_id {
-            Some(selected_layer_id) => self
-                .layers
-                .iter_mut()
-                .find(|layer| layer.id() == selected_layer_id),
-            None => None,
-        }
-    }
+    fn create_segmentations(&self) -> Vec<Segmentation> {
+        let (half_width, half_height) = self.image_info.resolution;
+        let (half_width, half_height) = (half_width as f32 / 2.0, half_height as f32 / 2.0);
 
-    pub fn selected_layer(&self) -> Option<&UiLayer> {
-        match self.selected_layer_id {
-            Some(selected_layer_id) => self
-                .layers
-                .iter()
-                .find(|layer| layer.id() == selected_layer_id),
-            None => None,
-        }
+        let normalized_vertices: Vec<_> = self
+            .vertices
+            .iter()
+            .map(|&v| (v.0 + half_width, v.1 + half_height))
+            .collect();
+
+        self.layers
+            .iter()
+            .map(|layer| Segmentation::from_layer(layer, &normalized_vertices))
+            .collect()
     }
 }
