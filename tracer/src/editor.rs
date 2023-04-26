@@ -76,10 +76,13 @@ impl Editor {
         };
 
         let layer_types = [
-            String::from("NonMaskingBackground"),
-            String::from("MaskingBackground"),
-            String::from("Animal"),
-            String::from("NonMaskingForegroundAttention"),
+            (String::from("NonMaskingBackground"), [1.0, 0.0, 0.0, 0.0]),
+            (String::from("MaskingBackground"), [0.0, 1.0, 0.0, 1.0]),
+            (String::from("Animal"), [0.0, 0.0, 1.0, 1.0]),
+            (
+                String::from("NonMaskingForegroundAttention"),
+                [1.0, 1.0, 1.0, 1.0],
+            ),
         ];
 
         let image_resolution = (image.width(), image.height());

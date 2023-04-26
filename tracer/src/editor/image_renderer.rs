@@ -92,10 +92,11 @@ impl ImageRenderer {
         match event {
             MouseEvent::Scroll(scroll) => self.scale_image(cursor, scroll),
             MouseEvent::LeftClick(action) => {
-                let cursor = self.transform_cursor_pos(cursor);
+                let mouse_pos = self.transform_cursor_pos(cursor);
                 match action {
                     super::MouseEventAction::Released => {
-                        self.on_mouse_press(cursor, image_processor)
+                        self.on_mouse_press(mouse_pos, image_processor);
+                        self.on_movement(cursor, image_processor);
                     }
                     super::MouseEventAction::Pressed => {}
                 }

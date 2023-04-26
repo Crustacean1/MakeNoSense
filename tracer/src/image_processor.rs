@@ -1,5 +1,4 @@
 use crate::editor::{image_selection::LayerInfo, ui_layer::UiLayer};
-use rand::Rng;
 
 use self::{
     layer_image_exporter::build_mask, layer_json_exporter::save_coco, triangle::Segmentation,
@@ -36,7 +35,7 @@ pub struct ImageProcessor {
 }
 
 impl ImageProcessor {
-    pub fn new(filename: &str, resolution: (u32, u32), layer_types: &[String]) -> Self {
+    pub fn new(filename: &str, resolution: (u32, u32), layer_types: &[(String, [f32; 4])]) -> Self {
         let layer_types = Self::generate_layer_types(layer_types);
         Self {
             layer_types,
@@ -83,6 +82,10 @@ impl ImageProcessor {
             }
             EditorEvent::Save => {
                 let segmentations = self.create_segmentations();
+                let base_name = Self::extract_base_filename(&self.image_info.filename);
+                let base_name = base_name.unwrap();
+
+                let mask_filename = format!("{}.mask.png", &base_name);
 
                 match save_coco(
                     &self.image_info.filename,
@@ -99,7 +102,8 @@ impl ImageProcessor {
                 }
 
                 let image = build_mask(self.image_info.resolution, &segmentations);
-                match image.save("./result.png") {
+
+                match image.save(mask_filename) {
                     Ok(_) => {
                         println!("Work saved");
                     }
@@ -109,6 +113,19 @@ impl ImageProcessor {
                 }
             }
             _ => {}
+        }
+    }
+
+    fn extract_base_filename(filepath: &str) -> Option<String> {
+        let path_segments = filepath.split("/");
+        match path_segments.last() {
+            Some(filename) => {
+                let filename_segments = filename.split(".");
+                let mut filename_parts: Vec<_> = filename_segments.collect();
+                filename_parts.pop();
+                Some(filename_parts.join("."))
+            }
+            _ => None,
         }
     }
 
@@ -158,14 +175,13 @@ impl ImageProcessor {
         None
     }
 
-    fn generate_layer_types(types: &[String]) -> Vec<LayerInfo> {
-        let mut rng = rand::thread_rng();
+    fn generate_layer_types(types: &[(String, [f32; 4])]) -> Vec<LayerInfo> {
         types
             .iter()
             .enumerate()
-            .map(|(i, name)| LayerInfo {
+            .map(|(i, (name, color))| LayerInfo {
                 layer_type: name.clone(),
-                color: [rng.gen(), rng.gen(), rng.gen(), 0.5],
+                color: *color,
                 id: i + 1,
             })
             .collect()
